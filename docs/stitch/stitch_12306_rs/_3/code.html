@@ -1,0 +1,394 @@
+<!DOCTYPE html><html class="dark" lang="zh-CN"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>系统设置 - 12306-rs</title>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Config -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "error": "#ff6b6b",
+                        "surface-tint": "#7dd3fc",
+                        "on-primary-container": "#c8eaff",
+                        "tertiary-fixed-dim": "#c8a0f0",
+                        "on-primary-fixed-variant": "#004d73",
+                        "surface-dim": "#0f1524",
+                        "surface-bright": "#1a2438",
+                        "tertiary-container": "#3d2060",
+                        "on-secondary": "#001f2e",
+                        "on-secondary-fixed-variant": "#2a4a5e",
+                        "surface-variant": "#1a2438",
+                        "surface-container": "#141c2e",
+                        "on-tertiary-fixed": "#1a002e",
+                        "error-container": "#3d1414",
+                        "surface-container-low": "#111828",
+                        "inverse-on-surface": "#0a0e1a",
+                        "surface-container-high": "#1a2438",
+                        "on-surface-variant": "#a0b4c4",
+                        "secondary": "#88b4cc",
+                        "tertiary": "#c8a0f0",
+                        "on-error-container": "#ffb3b3",
+                        "on-tertiary-fixed-variant": "#4d2a73",
+                        "on-secondary-fixed": "#0d1f2b",
+                        "primary-fixed": "#c8eaff",
+                        "on-surface": "#e0e8f0",
+                        "inverse-primary": "#0a4c6e",
+                        "outline-variant": "#2a3a48",
+                        "on-background": "#e0e8f0",
+                        "outline": "#4a6070",
+                        "surface-container-lowest": "#0a0e1a",
+                        "background": "#0a0e1a",
+                        "secondary-fixed-dim": "#88b4cc",
+                        "primary-fixed-dim": "#7dd3fc",
+                        "primary-container": "#0e4d6e",
+                        "on-error": "#1a0000",
+                        "secondary-fixed": "#c0d8e8",
+                        "on-primary-fixed": "#001f2e",
+                        "surface": "#0f1524",
+                        "on-secondary-container": "#c0d8e8",
+                        "tertiary-fixed": "#e8d0ff",
+                        "primary": "#7dd3fc",
+                        "on-tertiary": "#1a002e",
+                        "surface-container-highest": "#202c42",
+                        "on-primary": "#001f2e",
+                        "inverse-surface": "#e0e8f0",
+                        "on-tertiary-container": "#e8d0ff",
+                        "secondary-container": "#1a3a4e"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.5rem",
+                        "lg": "0.75rem",
+                        "xl": "1rem",
+                        "full": "9999px"
+                    },
+                    fontFamily: {
+                        "headline": ["Inter", "sans-serif"],
+                        "display": ["Inter", "sans-serif"],
+                        "body": ["Inter", "sans-serif"],
+                        "label": ["Inter", "sans-serif"]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        /* Glassmorphism Utilities */
+        .glass-panel {
+            background: rgba(20, 28, 46, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(125, 211, 252, 0.1);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        
+        .glass-input {
+            background: rgba(10, 14, 26, 0.5);
+            border: 1px solid rgba(74, 96, 112, 0.3);
+            color: #e0e8f0;
+        }
+        
+        .glass-input:focus {
+            outline: none;
+            border-color: #7dd3fc;
+            box-shadow: 0 0 0 1px #7dd3fc;
+        }
+        
+        .glass-btn-primary {
+            background: linear-gradient(135deg, rgba(125, 211, 252, 0.2) 0%, rgba(14, 77, 110, 0.4) 100%);
+            border: 1px solid rgba(125, 211, 252, 0.3);
+            color: #7dd3fc;
+            transition: all 0.2s ease;
+        }
+        
+        .glass-btn-primary:hover {
+            background: linear-gradient(135deg, rgba(125, 211, 252, 0.3) 0%, rgba(14, 77, 110, 0.5) 100%);
+            box-shadow: 0 0 15px rgba(125, 211, 252, 0.2);
+        }
+        
+        .sidebar-item {
+            position: relative;
+            transition: all 0.2s ease;
+        }
+        
+        .sidebar-item.active {
+            background: linear-gradient(90deg, rgba(125, 211, 252, 0.1) 0%, transparent 100%);
+            border-left: 2px solid #7dd3fc;
+            color: #7dd3fc;
+        }
+        
+        .sidebar-item:not(.active):hover {
+            background: rgba(255, 255, 255, 0.03);
+            color: #c0d8e8;
+        }
+        
+        body {
+            background-color: #0a0e1a;
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(14, 77, 110, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 85% 30%, rgba(61, 32, 96, 0.15) 0%, transparent 50%);
+            background-attachment: fixed;
+            color: #e0e8f0;
+        }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(10, 14, 26, 0.5);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(74, 96, 112, 0.5);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(125, 211, 252, 0.5);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col font-body antialiased overflow-hidden selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopAppBar -->
+<header class="glass-panel h-16 flex items-center justify-between px-6 z-20 shrink-0 border-b-0 border-t-0 border-l-0 border-r-0 border-b border-b-white/5">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary-container flex items-center justify-center shadow-[0_0_15px_rgba(125,211,252,0.3)]">
+<span class="material-symbols-outlined text-on-primary text-xl" style="font-variation-settings: 'FILL' 1;">train</span>
+</div>
+<h1 class="text-xl font-headline font-semibold tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">12306-rs</h1>
+<span class="px-2 py-0.5 rounded text-xs font-medium bg-surface-variant text-on-surface-variant border border-outline-variant/30 ml-2">v0.5.2</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="relative p-2 rounded-full text-on-surface-variant hover:text-primary hover:bg-white/5 transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-error ring-2 ring-surface-container-low"></span>
+</button>
+<div class="h-6 w-px bg-outline-variant/50 mx-1"></div>
+<button class="flex items-center gap-2 p-1.5 pr-3 rounded-full hover:bg-white/5 transition-colors border border-transparent hover:border-outline-variant/30">
+<div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container text-sm font-medium">
+                    AD
+                </div>
+<span class="text-sm font-medium text-on-surface">Admin</span>
+<span class="material-symbols-outlined text-on-surface-variant text-sm">expand_more</span>
+</button>
+</div>
+</header>
+<div class="flex flex-1 overflow-hidden">
+<!-- SideNavBar -->
+<nav class="glass-panel w-64 flex flex-col z-10 border-r border-r-white/5 shrink-0 pt-4">
+<div class="px-3 pb-2 text-xs font-semibold text-on-surface-variant tracking-wider uppercase mb-1">主菜单</div>
+<div class="flex flex-col gap-1 px-2">
+<a class="sidebar-item flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-on-surface-variant" href="#">
+<span class="material-symbols-outlined text-lg">dashboard</span>
+                    控制面板
+                </a>
+<a class="sidebar-item flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-on-surface-variant" href="#">
+<span class="material-symbols-outlined text-lg">search</span>
+                    车票查询
+                </a>
+<a class="sidebar-item flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-on-surface-variant" href="#">
+<span class="material-symbols-outlined text-lg">list_alt</span>
+                    任务列表
+                </a>
+<a class="sidebar-item active flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium" href="#">
+<span class="material-symbols-outlined text-lg" style="font-variation-settings: 'FILL' 1;">settings</span>
+                    系统设置
+                </a>
+</div>
+<div class="mt-auto p-4">
+<div class="glass-panel rounded-xl p-4 border border-outline-variant/20 relative overflow-hidden">
+<div class="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent z-0"></div>
+<div class="relative z-10 flex flex-col gap-2">
+<div class="flex items-center justify-between">
+<span class="text-xs font-medium text-on-surface-variant">系统状态</span>
+<span class="flex h-2 w-2 rounded-full bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.6)]"></span>
+</div>
+<div class="text-sm font-semibold text-on-surface">运行中 (Stable)</div>
+</div>
+</div>
+</div>
+</nav>
+<!-- Main Content -->
+<main class="flex-1 overflow-y-auto relative">
+<div class="max-w-5xl mx-auto px-8 py-8 flex flex-col gap-8 pb-20">
+<!-- Header -->
+<div class="flex items-center justify-between">
+<div>
+<h2 class="text-2xl font-headline font-semibold text-on-surface tracking-tight">全局配置</h2>
+<p class="text-sm text-on-surface-variant mt-1">管理应用的核心运行参数及行为设置</p>
+</div>
+<button class="glass-btn-primary flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium text-sm">
+<span class="material-symbols-outlined text-[18px]">save</span>
+                        保存更改
+                    </button>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+<!-- Left Column (Form) -->
+<div class="lg:col-span-2 flex flex-col gap-6">
+<!-- Storage Config -->
+<section class="glass-panel rounded-xl p-6">
+<h3 class="text-lg font-medium text-on-surface mb-5 flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary">database</span>
+                                存储配置
+                            </h3>
+<div class="space-y-4">
+<div>
+<label class="block text-sm font-medium text-on-surface-variant mb-1.5" for="db-path">SQLite 数据库路径</label>
+<div class="relative">
+<span class="absolute inset-y-0 left-0 flex items-center pl-3">
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">folder_open</span>
+</span>
+<input class="glass-input block w-full rounded-lg pl-10 pr-3 py-2 text-sm focus:ring-0" id="db-path" type="text" value="/var/lib/12306-rs/data.db">
+</div>
+<p class="text-xs text-on-surface-variant/70 mt-1.5 ml-1">修改后需重启服务方可生效</p>
+</div>
+</div>
+</section>
+<!-- Network Settings -->
+<section class="glass-panel rounded-xl p-6">
+<h3 class="text-lg font-medium text-on-surface mb-5 flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary">router</span>
+                                网络设置
+                            </h3>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+<div>
+<label class="block text-sm font-medium text-on-surface-variant mb-1.5" for="listen-addr">监听地址 (Listen Address)</label>
+<input class="glass-input block w-full rounded-lg px-3 py-2 text-sm focus:ring-0" id="listen-addr" type="text" value="0.0.0.0">
+</div>
+<div>
+<label class="block text-sm font-medium text-on-surface-variant mb-1.5" for="listen-port">端口 (Port)</label>
+<input class="glass-input block w-full rounded-lg px-3 py-2 text-sm focus:ring-0" id="listen-port" type="number" value="8080">
+</div>
+</div>
+</section>
+<!-- Service Defaults -->
+<section class="glass-panel rounded-xl p-6">
+<h3 class="text-lg font-medium text-on-surface mb-5 flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary">tune</span>
+                                服务默认值
+                            </h3>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+<div>
+<label class="block text-sm font-medium text-on-surface-variant mb-1.5" for="query-interval">默认查询间隔 (毫秒)</label>
+<div class="relative">
+<input class="glass-input block w-full rounded-lg px-3 py-2 text-sm focus:ring-0" id="query-interval" max="60000" min="1000" type="number" value="3000"><p class="text-[10px] text-error mt-1.5 ml-1 opacity-80">最小支持 1000ms；高频查询易触发 12306 风控封禁</p>
+<div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-on-surface-variant text-xs">ms</div>
+</div>
+</div>
+<div>
+<label class="block text-sm font-medium text-on-surface-variant mb-1.5" for="log-level">日志级别</label>
+<div class="relative">
+<select class="glass-input block w-full rounded-lg pl-3 pr-10 py-2 text-sm appearance-none focus:ring-0" id="log-level">
+<option value="trace">TRACE</option>
+<option value="debug">DEBUG</option>
+<option selected="" value="info">INFO</option>
+<option value="warn">WARN</option>
+<option value="error">ERROR</option>
+</select>
+<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-on-surface-variant">
+<span class="material-symbols-outlined text-sm">expand_more</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Experimental Features -->
+<section class="glass-panel rounded-xl p-6 border-dashed border-outline-variant/40 opacity-80 hover:opacity-100 transition-opacity">
+<div class="flex items-center justify-between mb-2">
+<h3 class="text-lg font-medium text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-tertiary">science</span>
+                                    实验性功能 <span class="text-xs font-normal text-tertiary px-1.5 py-0.5 rounded bg-tertiary/10 border border-tertiary/20 ml-1">后续增强</span>
+</h3>
+</div>
+<p class="text-sm text-on-surface-variant mb-5">这些功能正在开发中，当前版本暂不可用，敬请期待后续更新。</p>
+<div class="space-y-4 pointer-events-none">
+<div class="flex items-center justify-between p-3 rounded-lg bg-surface-container/30 border border-white/5">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-surface-variant text-sm">speed</span>
+</div>
+<div>
+<div class="text-sm font-medium text-on-surface-variant">CDN 接口加速<span class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-outline-variant/30 text-on-surface-variant/60 border border-outline-variant/20">已禁用</span></div>
+<div class="text-xs text-on-surface-variant/60">通过智能路由选择最快接口节点</div>
+</div>
+</div>
+<div class="w-10 h-5 bg-surface-container rounded-full border border-outline-variant/30 relative">
+<div class="absolute left-0.5 top-0.5 w-4 h-4 bg-outline-variant rounded-full"></div>
+</div>
+</div>
+<div class="flex items-center justify-between p-3 rounded-lg bg-surface-container/30 border border-white/5">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-surface-variant text-sm">vpn_lock</span>
+</div>
+<div>
+<div class="text-sm font-medium text-on-surface-variant">动态代理池<span class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-outline-variant/30 text-on-surface-variant/60 border border-outline-variant/20">已禁用</span></div>
+<div class="text-xs text-on-surface-variant/60">防止高频请求被封 IP</div>
+</div>
+</div>
+<div class="w-10 h-5 bg-surface-container rounded-full border border-outline-variant/30 relative">
+<div class="absolute left-0.5 top-0.5 w-4 h-4 bg-outline-variant rounded-full"></div>
+</div>
+</div>
+<div class="flex items-center justify-between p-3 rounded-lg bg-surface-container/30 border border-white/5">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-surface-variant text-sm">key</span>
+</div>
+<div>
+<div class="text-sm font-medium text-on-surface-variant">人工验证辅助入口<span class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-outline-variant/30 text-on-surface-variant/60 border border-outline-variant/20">已禁用</span></div>
+<div class="text-xs text-on-surface-variant/60">打开 12306 官方验证页面，由用户手动完成验证</div>
+</div>
+</div>
+<div class="w-10 h-5 bg-surface-container rounded-full border border-outline-variant/30 relative">
+<div class="absolute left-0.5 top-0.5 w-4 h-4 bg-outline-variant rounded-full"></div>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- Right Column (Info & Notices) -->
+<div class="flex flex-col gap-6">
+<!-- System Info -->
+<div class="glass-panel rounded-xl overflow-hidden">
+<div class="bg-surface-container/50 px-5 py-4 border-b border-white/5 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">info</span>
+<h3 class="text-sm font-medium text-on-surface">系统运行信息</h3>
+</div>
+<div class="p-5 flex flex-col gap-4">
+<div class="flex justify-between items-center pb-3 border-b border-white/5">
+<span class="text-sm text-on-surface-variant">运行环境</span>
+<span class="text-sm font-medium text-on-surface flex items-center gap-1.5">
+<span class="material-symbols-outlined text-xs text-secondary">view_in_ar</span>
+                                        Docker 容器
+                                    </span>
+</div>
+<div class="flex justify-between items-center pb-3 border-b border-white/5">
+<span class="text-sm text-on-surface-variant">Rust 版本</span>
+<span class="text-sm font-medium text-on-surface font-mono">rustc 1.75.0</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-sm text-on-surface-variant">运行时间 (Uptime)</span>
+<span class="text-sm font-medium text-on-surface">858 天 14 小时 22 分</span>
+</div>
+</div>
+</div>
+<!-- Security Notice Section -->
+<div class="glass-panel rounded-xl overflow-hidden border-error/20 bg-error/5 relative"><div class="absolute top-0 left-0 w-1 h-full bg-error"></div><div class="px-5 py-4 flex items-center gap-2 bg-error/10 border-b border-error/10"><span class="material-symbols-outlined text-error text-[20px]">security</span><h3 class="text-sm font-bold text-error uppercase tracking-wider">安全与合规须知</h3></div><div class="px-5 pb-5 pt-4 space-y-4"><div class="flex gap-3 p-3 rounded-lg bg-error/10 border border-error/20"><span class="material-symbols-outlined text-error text-[20px] shrink-0">payments</span><div class="text-sm text-on-surface"><p class="font-bold mb-1">严正声明：不支持自动支付</p><p class="text-on-surface-variant text-xs leading-relaxed">本系统不具备任何支付权限，<strong>不支持任何形式的自动扣款与支付</strong>。下单成功后，请务必在 30 分钟内登录官方 App 手动完成支付。</p></div></div><div class="flex gap-3"><span class="material-symbols-outlined text-primary text-[18px] shrink-0 mt-0.5">verified_user</span><p class="text-sm text-on-surface-variant"><strong>账号凭据仅本机存储</strong>，系统不会将您的 12306 账号信息上传至任何第三方服务器。</p></div><div class="flex gap-3"><span class="material-symbols-outlined text-yellow-400 text-[18px] shrink-0 mt-0.5">warning</span><p class="text-sm text-on-surface-variant">请合理设置查询间隔，<strong>高频查询可能触发 12306 风控</strong>，导致账号被限制或 IP 被封禁。</p></div></div></div>
+</div>
+</div>
+</div>
+</main>
+</div>
+
+
+</body></html>

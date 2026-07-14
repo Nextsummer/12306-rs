@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>创建抢票任务 - 业务强化版 - 12306-rs</title>
+<!-- Google Fonts & Material Symbols -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-surface": "#e0e8f0",
+                        "secondary-container": "#1a3a4e",
+                        "surface-container-highest": "#202c42",
+                        "primary-fixed": "#c8eaff",
+                        "on-error": "#1a0000",
+                        "inverse-surface": "#e0e8f0",
+                        "surface-bright": "#1a2438",
+                        "on-secondary": "#001f2e",
+                        "tertiary-fixed": "#e8d0ff",
+                        "surface-container-lowest": "#0a0e1a",
+                        "primary-container": "#0e4d6e",
+                        "error-container": "#3d1414",
+                        "on-tertiary-fixed-variant": "#4d2a73",
+                        "on-secondary-fixed": "#0d1f2b",
+                        "background": "#0a0e1a",
+                        "secondary-fixed": "#c0d8e8",
+                        "primary": "#7dd3fc",
+                        "tertiary-fixed-dim": "#c8a0f0",
+                        "error": "#ff6b6b",
+                        "secondary": "#88b4cc",
+                        "tertiary": "#c8a0f0",
+                        "primary-fixed-dim": "#7dd3fc",
+                        "on-secondary-fixed-variant": "#2a4a5e",
+                        "surface-container-low": "#111828",
+                        "surface": "#0f1524",
+                        "on-tertiary": "#1a002e",
+                        "on-primary-container": "#c8eaff",
+                        "inverse-primary": "#0a4c6e",
+                        "on-tertiary-container": "#e8d0ff",
+                        "on-primary-fixed": "#001f2e",
+                        "surface-tint": "#7dd3fc",
+                        "on-error-container": "#ffb3b3",
+                        "secondary-fixed-dim": "#88b4cc",
+                        "tertiary-container": "#3d2060",
+                        "on-primary": "#001f2e",
+                        "on-secondary-container": "#c0d8e8",
+                        "on-tertiary-fixed": "#1a002e",
+                        "on-background": "#e0e8f0",
+                        "outline": "#4a6070",
+                        "outline-variant": "#2a3a48",
+                        "on-surface-variant": "#a0b4c4",
+                        "inverse-on-surface": "#0a0e1a",
+                        "on-primary-fixed-variant": "#004d73",
+                        "surface-container-high": "#1a2438",
+                        "surface-variant": "#1a2438",
+                        "surface-dim": "#0f1524",
+                        "surface-container": "#141c2e"
+                    },
+                    fontFamily: {
+                        "headline": ["Inter", "sans-serif"],
+                        "display": ["Inter", "sans-serif"],
+                        "body": ["Inter", "sans-serif"],
+                        "label": ["Inter", "sans-serif"]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Custom scrollbar for webkit */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0a0e1a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #2a3a48;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4a6070;
+        }
+        
+        /* Toggle Switch Styles */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #7dd3fc;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #7dd3fc;
+        }
+        .toggle-checkbox:checked + .toggle-label:after {
+            transform: translateX(100%);
+            border-color: white;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body h-screen flex overflow-hidden selection:bg-primary-container selection:text-on-primary-container">
+<!-- Sidebar -->
+<aside class="w-64 bg-surface border-r border-outline-variant flex flex-col shrink-0 transition-all duration-300 z-20">
+<div class="h-16 flex items-center px-6 border-b border-outline-variant shrink-0">
+<span class="material-symbols-outlined text-primary mr-3 text-3xl">train</span>
+<span class="font-headline font-bold text-xl tracking-wide text-on-surface">12306-rs</span>
+</div>
+<nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+<div class="px-3 mb-2 mt-4 text-xs font-semibold text-on-surface-variant uppercase tracking-wider">核心业务</div>
+<a class="flex items-center px-3 py-2.5 rounded-lg bg-secondary-container text-on-primary-container group transition-colors" href="#">
+<span class="material-symbols-outlined mr-3">add_task</span>
+<span class="font-medium">创建任务</span>
+</a>
+<a class="flex items-center px-3 py-2.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface group transition-colors" href="#">
+<span class="material-symbols-outlined mr-3">list_alt</span>
+<span class="font-medium">任务列表</span>
+<span class="ml-auto bg-surface-container-highest text-primary-fixed text-xs py-0.5 px-2 rounded-full">3</span>
+</a>
+<a class="flex items-center px-3 py-2.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface group transition-colors" href="#">
+<span class="material-symbols-outlined mr-3">history</span>
+<span class="font-medium">历史记录</span>
+</a>
+<div class="px-3 mb-2 mt-6 text-xs font-semibold text-on-surface-variant uppercase tracking-wider">系统管理</div>
+<a class="flex items-center px-3 py-2.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface group transition-colors" href="#">
+<span class="material-symbols-outlined mr-3">group</span>
+<span class="font-medium">乘车人管理</span>
+</a>
+<a class="flex items-center px-3 py-2.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface group transition-colors" href="#">
+<span class="material-symbols-outlined mr-3">manage_accounts</span>
+<span class="font-medium">账号管理</span>
+</a>
+<a class="flex items-center px-3 py-2.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface group transition-colors" href="#">
+<span class="material-symbols-outlined mr-3">settings</span>
+<span class="font-medium">系统设置</span>
+</a>
+</nav>
+<div class="p-4 border-t border-outline-variant shrink-0">
+<div class="flex items-center">
+<div class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center text-primary font-bold mr-3 shrink-0">
+                    A
+                </div>
+<div class="flex-1 min-w-0">
+<p class="text-sm font-medium text-on-surface truncate">Admin User</p>
+<p class="text-xs text-on-surface-variant truncate">admin@12306-rs.local</p>
+</div>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-xl">logout</span>
+</button>
+</div>
+</div>
+</aside>
+<!-- Main Content Wrapper -->
+<div class="flex-1 flex flex-col min-w-0 bg-background">
+<!-- Topbar -->
+<header class="h-16 bg-surface/80 backdrop-blur-md border-b border-outline-variant flex items-center justify-between px-6 shrink-0 sticky top-0 z-10">
+<div class="flex items-center">
+<h1 class="text-lg font-headline font-semibold text-on-surface flex items-center">
+                    创建抢票任务
+                    <span class="ml-3 px-2 py-0.5 rounded text-xs font-medium bg-secondary-container text-primary-fixed border border-primary-container">业务强化版</span>
+</h1>
+</div>
+<div class="flex items-center space-x-4">
+<div class="flex items-center bg-surface-container-high rounded-full p-1 border border-outline-variant">
+<span class="w-2 h-2 rounded-full bg-green-500 ml-2 animate-pulse"></span>
+<span class="text-xs text-on-surface-variant px-2">节点状态: 正常</span>
+</div>
+<button class="text-on-surface-variant hover:text-primary transition-colors relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-0 right-0 w-2 h-2 bg-error rounded-full"></span>
+</button>
+</div>
+</header>
+<!-- Main Layout (Form + Summary Sidebar) -->
+<div class="flex-1 flex overflow-hidden">
+<!-- Form Area -->
+<main class="flex-1 overflow-y-auto p-6 scroll-smooth">
+<div class="max-w-4xl mx-auto space-y-8 pb-12">
+<!-- Section 1: Basic Info -->
+<section class="bg-surface rounded-xl border border-outline-variant overflow-hidden shadow-sm">
+<div class="bg-surface-container-high px-6 py-4 border-b border-outline-variant flex items-center justify-between">
+<h2 class="text-base font-semibold text-on-surface flex items-center">
+<span class="material-symbols-outlined text-primary mr-2 text-xl">route</span>
+                                基础行程信息
+                            </h2>
+</div>
+<div class="p-6 space-y-6">
+<!-- Stations -->
+<div class="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-4 items-end">
+<div>
+<label class="block text-sm font-medium text-on-surface-variant mb-1.5">出发站</label>
+<div class="relative">
+<span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-on-surface-variant">
+<span class="material-symbols-outlined text-lg">trip_origin</span>
+</span>
+<input class="w-full bg-surface-container-highest border border-outline-variant rounded-lg py-2.5 pl-10 pr-3 text-on-surface focus:ring-1 focus:ring-primary focus:border-primary transition-colors" placeholder="输入城市或车站拼音" type="text" value="北京 (BJP)"/>
+</div>
+</div>
+<div class="flex justify-center pb-2 hidden md:flex">
+<button class="w-10 h-10 rounded-full bg-surface-container-highest border border-outline-variant flex items-center justify-center text-on-surface-variant hover:text-primary hover:border-primary transition-colors group">
+<span class="material-symbols-outlined group-hover:rotate-180 transition-transform duration-300">sync_alt</span>
+</button>
+</div>
+<div>
+<label class="block text-sm font-medium text-on-surface-variant mb-1.5">到达站</label>
+<div class="relative">
+<span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-on-surface-variant">
+<span class="material-symbols-outlined text-lg">location_on</span>
+</span>
+<input class="w-full bg-surface-container-highest border border-outline-variant rounded-lg py-2.5 pl-10 pr-3 text-on-surface focus:ring-1 focus:ring-primary focus:border-primary transition-colors" placeholder="输入城市或车站拼音" type="text" value="上海 (SHH)"/>
+</div>
+</div>
+</div>
+<!-- Dates -->
+<div>
+<div class="flex items-center justify-between mb-1.5">
+<label class="block text-sm font-medium text-on-surface-variant">乘车日期 (支持多选)</label>
+<span class="text-xs text-primary-fixed cursor-pointer hover:underline">清空选择</span>
+</div>
+<div class="relative">
+<div class="flex flex-wrap gap-2 p-2 min-h-[46px] bg-surface-container-highest border border-outline-variant rounded-lg items-center">
+<span class="inline-flex items-center px-2.5 py-1 rounded bg-secondary-container text-on-primary-container text-sm border border-primary-container">2026-07-05 (周日)<button class="ml-1.5 text-on-primary-container/70 hover:text-on-primary-container"><span class="material-symbols-outlined text-sm block">close</span></button></span>
+<span class="inline-flex items-center px-2.5 py-1 rounded bg-secondary-container text-on-primary-container text-sm border border-primary-container">2026-07-06 (周一)<button class="ml-1.5 text-on-primary-container/70 hover:text-on-primary-container"><span class="material-symbols-outlined text-sm block">close</span></button></span>
+<input class="flex-1 min-w-[120px] bg-transparent border-none focus:ring-0 text-sm text-on-surface p-0 m-1" placeholder="选择日期..." type="text"/>
+<span class="material-symbols-outlined text-on-surface-variant absolute right-3">calendar_month</span>
+</div>
+</div>
+<p class="text-xs text-on-surface-variant mt-1.5"><span class="material-symbols-outlined text-[14px] inline-block align-text-bottom mr-1">info</span>多日期策略：任意一天抢到即停止任务。</p>
+</div>
+</div>
+</section>
+<!-- Section 2: Passengers & Seats -->
+<section class="bg-surface rounded-xl border border-outline-variant overflow-hidden shadow-sm">
+<div class="bg-surface-container-high px-6 py-4 border-b border-outline-variant flex items-center justify-between">
+<h2 class="text-base font-semibold text-on-surface flex items-center">
+<span class="material-symbols-outlined text-primary mr-2 text-xl">group_add</span>
+                                乘车人与席别
+                            </h2>
+<button class="text-sm text-primary hover:text-primary-fixed font-medium flex items-center">
+<span class="material-symbols-outlined text-[18px] mr-1">person_add</span>
+                                添加乘车人
+                            </button>
+</div>
+<div class="p-6 space-y-6">
+<!-- Passengers -->
+<div>
+<label class="block text-sm font-medium text-on-surface-variant mb-3">选择乘车人 (已选 2/5)</label>
+<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+<label class="relative flex cursor-pointer rounded-lg border border-primary bg-secondary-container/30 p-3 shadow-sm focus:outline-none">
+<input checked="" class="sr-only" name="passenger" type="checkbox" value="1"/>
+<div class="flex w-full items-center justify-between">
+<div class="flex items-center">
+<div class="text-sm">
+<p class="font-medium text-on-surface">张三</p>
+<p class="text-xs text-on-surface-variant mt-0.5">成人票</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-primary text-xl">check_circle</span>
+</div>
+</label>
+<label class="relative flex cursor-pointer rounded-lg border border-primary bg-secondary-container/30 p-3 shadow-sm focus:outline-none">
+<input checked="" class="sr-only" name="passenger" type="checkbox" value="2"/>
+<div class="flex w-full items-center justify-between">
+<div class="flex items-center">
+<div class="text-sm">
+<p class="font-medium text-on-surface">李四</p>
+<p class="text-xs text-on-surface-variant mt-0.5">学生票</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-primary text-xl">check_circle</span>
+</div>
+</label>
+<label class="relative flex cursor-pointer rounded-lg border border-outline-variant bg-surface-container-highest p-3 shadow-sm hover:bg-surface-container-high transition-colors focus:outline-none">
+<input class="sr-only" name="passenger" type="checkbox" value="3"/>
+<div class="flex w-full items-center justify-between">
+<div class="flex items-center">
+<div class="text-sm">
+<p class="font-medium text-on-surface-variant">王五</p>
+<p class="text-xs text-on-surface-variant mt-0.5">成人票</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline-variant text-xl">circle</span>
+</div>
+</label>
+</div>
+</div>
+<hr class="border-outline-variant"/>
+<!-- Seats Priority -->
+<div>
+<div class="flex items-center justify-between mb-3">
+<label class="block text-sm font-medium text-on-surface-variant">席别优先级 (拖拽排序，从左到右优先级递减)</label>
+</div>
+<div class="flex flex-wrap gap-2 mb-4">
+<!-- Selected Seats (Draggable representation) -->
+<div class="flex items-center space-x-2 p-2 bg-surface-container-highest border border-outline-variant rounded-lg cursor-move select-none group">
+<span class="material-symbols-outlined text-outline-variant text-sm group-hover:text-primary transition-colors">drag_indicator</span>
+<span class="text-sm text-on-surface font-medium">二等座</span>
+<div class="w-px h-4 bg-outline-variant mx-1"></div>
+<button class="text-on-surface-variant hover:text-error"><span class="material-symbols-outlined text-sm block">close</span></button>
+</div>
+<div class="flex items-center space-x-2 p-2 bg-surface-container-highest border border-outline-variant rounded-lg cursor-move select-none group">
+<span class="material-symbols-outlined text-outline-variant text-sm group-hover:text-primary transition-colors">drag_indicator</span>
+<span class="text-sm text-on-surface font-medium">一等座</span>
+<div class="w-px h-4 bg-outline-variant mx-1"></div>
+<button class="text-on-surface-variant hover:text-error"><span class="material-symbols-outlined text-sm block">close</span></button>
+</div>
+<!-- Add Seat Button -->
+<div class="relative inline-block">
+<button class="flex items-center space-x-1 p-2 border border-dashed border-outline-variant rounded-lg text-on-surface-variant hover:text-primary hover:border-primary transition-colors bg-surface-container-lowest">
+<span class="material-symbols-outlined text-sm">add</span>
+<span class="text-sm">添加席别</span>
+</button>
+</div>
+</div>
+<!-- No Seat Toggle -->
+</div>
+</div>
+</section>
+<!-- Section 3: Strategy & Filters -->
+<section class="bg-surface rounded-xl border border-outline-variant overflow-hidden shadow-sm">
+<div class="bg-surface-container-high px-6 py-4 border-b border-outline-variant flex items-center justify-between">
+<h2 class="text-base font-semibold text-on-surface flex items-center">
+<span class="material-symbols-outlined text-primary mr-2 text-xl">settings_suggest</span>
+                                抢票策略配置
+                            </h2>
+</div>
+<div class="p-6 space-y-6">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="space-y-4">
+<div class="flex items-center justify-between p-3 bg-surface-container-lowest rounded-lg border border-outline-variant">
+<div>
+<p class="text-sm font-medium text-on-surface">无座兜底</p>
+<p class="text-xs text-on-surface-variant">如所选席别无票，接受无座并自动提交订单</p>
+</div>
+<div class="relative inline-block w-10 align-middle select-none">
+<input class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-surface border-2 border-outline-variant appearance-none cursor-pointer z-10 transition-transform duration-200 ease-in-out" id="no-seat-toggle-new" type="checkbox"/>
+<label class="toggle-label block overflow-hidden h-5 rounded-full bg-surface-container-highest border border-outline-variant cursor-pointer" for="no-seat-toggle-new"></label>
+</div>
+</div>
+<div class="p-3 bg-surface-container-lowest rounded-lg border border-outline-variant">
+<p class="text-sm font-medium text-on-surface mb-1">多日期/多乘客策略</p>
+<p class="text-xs text-on-surface-variant">当前已选 2 个日期，2 位乘车人。系统将按席别优先级在所有日期中并发/轮询抢票。</p>
+</div>
+</div>
+<div class="space-y-4">
+<div class="p-3 bg-surface-container-lowest rounded-lg border border-outline-variant">
+<p class="text-sm font-medium text-on-surface mb-2">席别优先级确认</p>
+<div class="flex flex-wrap gap-2">
+<span class="text-xs bg-secondary-container text-on-primary-container px-2 py-1 rounded border border-primary-container">1. 二等座</span>
+<span class="text-xs bg-surface-container-highest text-on-surface px-2 py-1 rounded border border-outline-variant">2. 一等座</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section><section class="bg-surface rounded-xl border border-outline-variant overflow-hidden shadow-sm">
+<div class="bg-surface-container-high px-6 py-4 border-b border-outline-variant flex items-center justify-between">
+<h2 class="text-base font-semibold text-on-surface flex items-center">
+<span class="material-symbols-outlined text-primary mr-2 text-xl">smart_toy</span>
+                                策略与过滤配置
+                            </h2>
+</div>
+<div class="p-6 space-y-8">
+<div>
+<h3 class="text-sm font-medium text-on-surface mb-4">新增车次监控</h3>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<label class="block">
+<span class="block text-xs text-on-surface-variant mb-2">发现后的处理方式</span>
+<select class="w-full bg-surface-container-highest border border-outline-variant rounded-md py-2 px-3 text-sm text-on-surface focus:ring-1 focus:ring-primary focus:border-primary" id="new-train-policy">
+<option value="off">关闭</option>
+<option value="notify_only">仅通知，不下单</option>
+<option value="auto_order">通知并自动下单</option>
+</select>
+</label>
+<label class="flex items-center justify-between p-3 bg-surface-container-lowest rounded-lg border border-outline-variant">
+<span>
+<span class="block text-sm font-medium text-on-surface">仅监控新增车次</span>
+<span class="block text-xs text-on-surface-variant mt-1">首次查询建立基线，忽略已有车次</span>
+</span>
+<input class="w-4 h-4 text-primary bg-surface-container-highest border-outline-variant rounded focus:ring-primary" id="new-trains-only" type="checkbox"/>
+</label>
+</div>
+</div>
+<hr class="border-outline-variant"/>
+<!-- Trains List -->
+<div>
+<label class="block text-sm font-medium text-on-surface-variant mb-3">车次选择 (留空则匹配所有符合条件的车次)</label>
+<div class="flex gap-4 mb-3">
+<label class="inline-flex items-center cursor-pointer">
+<input checked="" class="form-radio text-primary bg-surface-container-highest border-outline-variant focus:ring-primary focus:ring-offset-background" name="train_filter_type" type="radio" value="include"/>
+<span class="ml-2 text-sm text-on-surface">包含列表 (仅抢以下车次)</span>
+</label>
+<label class="inline-flex items-center cursor-pointer">
+<input class="form-radio text-primary bg-surface-container-highest border-outline-variant focus:ring-primary focus:ring-offset-background" name="train_filter_type" type="radio" value="exclude"/>
+<span class="ml-2 text-sm text-on-surface">排除列表 (不抢以下车次)</span>
+</label>
+</div>
+<div class="relative">
+<div class="flex flex-wrap gap-2 p-2 min-h-[46px] bg-surface-container-highest border border-outline-variant rounded-lg items-center">
+<span class="inline-flex items-center px-2.5 py-1 rounded bg-surface-container-low border border-outline text-on-surface text-sm font-mono">
+                                            G1
+                                            <button class="ml-1.5 text-on-surface-variant hover:text-error"><span class="material-symbols-outlined text-sm block">close</span></button>
+</span>
+<span class="inline-flex items-center px-2.5 py-1 rounded bg-surface-container-low border border-outline text-on-surface text-sm font-mono">
+                                            G5
+                                            <button class="ml-1.5 text-on-surface-variant hover:text-error"><span class="material-symbols-outlined text-sm block">close</span></button>
+</span>
+<input class="flex-1 min-w-[120px] bg-transparent border-none focus:ring-0 text-sm text-on-surface p-0 m-1 uppercase" placeholder="输入车次按回车添加 (如 G123)" type="text"/>
+</div>
+</div>
+</div>
+<hr class="border-outline-variant"/>
+<!-- Waitlist Strategy -->
+<div>
+<h3 class="text-sm font-medium text-on-surface mb-4">候补策略配置</h3>
+<div class="space-y-4 bg-surface-container-lowest p-4 rounded-lg border border-outline-variant">
+<!-- Enable Waitlist -->
+<div class="flex items-start justify-between">
+<div>
+<label class="text-sm font-medium text-on-surface block mb-1">开启候补 (Enable Waitlist)</label>
+<p class="text-xs text-on-surface-variant">允许系统在余票不足时自动提交候补订单</p>
+</div>
+<div class="relative inline-block w-10 align-middle select-none mt-1">
+<input checked="" class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-surface border-2 border-outline-variant appearance-none cursor-pointer z-10 transition-transform duration-200 ease-in-out" id="enable-waitlist" name="enable_waitlist" type="checkbox"/>
+<label class="toggle-label block overflow-hidden h-5 rounded-full bg-primary border border-primary cursor-pointer" for="enable-waitlist"></label>
+</div>
+</div>
+<div class="h-px bg-outline-variant/50 w-full"></div>
+<!-- Strong Waitlist -->
+<div class="flex items-start justify-between">
+<div class="pr-6">
+<label class="text-sm font-medium text-primary-fixed block mb-1 flex items-center">
+<span class="material-symbols-outlined text-[16px] mr-1">bolt</span>
+                                                强力候补 (Strong Waitlist)
+                                            </label>
+<p class="text-xs text-on-surface-variant leading-relaxed">无符合余票时优先提交候补并暂停继续刷普通余票，避免死循环</p>
+</div>
+<div class="relative inline-block w-10 align-middle select-none mt-1 shrink-0">
+<input class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-surface border-2 border-outline-variant appearance-none cursor-pointer z-10 transition-transform duration-200 ease-in-out" id="strong-waitlist" name="strong_waitlist" type="checkbox"/>
+<label class="toggle-label block overflow-hidden h-5 rounded-full bg-surface-container-highest border border-outline-variant cursor-pointer" for="strong-waitlist"></label>
+</div>
+</div>
+</div>
+</div>
+<!-- Query Interval -->
+<div>
+<div class="flex items-center justify-between mb-3">
+<label class="block text-sm font-medium text-on-surface-variant">查询间隔 (毫秒)</label>
+<div class="w-20">
+<input class="w-full bg-surface-container-highest border border-outline-variant rounded-md py-1 px-2 text-sm text-center text-on-surface focus:ring-1 focus:ring-primary focus:border-primary" type="number" value="3000"/>
+</div>
+</div>
+<div class="px-2">
+<input class="w-full h-1.5 bg-outline-variant rounded-lg appearance-none cursor-pointer accent-primary" max="5000" min="500" step="100" type="range" value="3000"/>
+</div>
+<div class="flex justify-between text-xs text-on-surface-variant mt-2 px-2">
+<span class="">500ms (高频封号风险)</span>
+<span class="">推荐 1500-3000ms</span>
+<span class="">5000ms (较安全)</span>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- Task Summary Sidebar -->
+<aside class="w-80 bg-surface-container-low border-l border-outline-variant flex flex-col shrink-0 z-10 shadow-[-4px_0_15px_rgba(0,0,0,0.1)] hidden lg:flex">
+<div class="h-16 flex items-center px-5 border-b border-outline-variant shrink-0 bg-surface">
+<h2 class="text-base font-semibold text-on-surface">任务配置摘要</h2>
+</div>
+<div class="flex-1 overflow-y-auto p-5 space-y-6">
+<!-- Summary Cards -->
+<div class="space-y-4">
+<div class="bg-surface rounded-lg p-3 border border-outline-variant">
+<div class="text-xs text-on-surface-variant mb-1 uppercase font-semibold">行程</div>
+<div class="flex items-center justify-between font-medium text-on-surface">
+<span class="">北京 (BJP)</span>
+<span class="material-symbols-outlined text-primary text-sm">arrow_forward</span>
+<span class="">上海 (SHH)</span>
+</div>
+<div class="text-sm text-on-surface-variant mt-2">2026-07-05, 2026-07-06</div>
+</div>
+<div class="bg-surface rounded-lg p-3 border border-outline-variant">
+<div class="text-xs text-on-surface-variant mb-1 uppercase font-semibold">乘车人 &amp; 席别</div>
+<div class="text-sm text-on-surface mb-2">张三, 李四 (共 2 人)</div>
+<div class="flex flex-wrap gap-1">
+<span class="text-xs bg-surface-container-highest px-2 py-0.5 rounded border border-outline-variant text-on-surface">二等座</span>
+<span class="text-xs bg-surface-container-highest px-2 py-0.5 rounded border border-outline-variant text-on-surface">一等座</span>
+</div>
+</div>
+<div class="bg-surface rounded-lg p-3 border border-outline-variant">
+<div class="text-xs text-on-surface-variant mb-2 uppercase font-semibold">策略配置</div>
+<ul class="space-y-1.5 text-sm text-on-surface-variant">
+<li class="flex items-center"><span class="material-symbols-outlined text-[16px] mr-2 text-primary">check</span>限定车次 (2个)</li>
+<li class="flex items-center"><span class="material-symbols-outlined text-[16px] mr-2 text-primary">check</span>开启候补</li>
+<li class="flex items-center"><span class="material-symbols-outlined text-[16px] mr-2 text-outline">close</span>强力候补 (未开启)</li>
+<li class="flex items-center"><span class="material-symbols-outlined text-[16px] mr-2 text-primary">timer</span>间隔: 3000ms</li>
+</ul>
+</div>
+</div>
+<!-- Warnings / Info -->
+<div class="bg-error-container/20 border border-error-container rounded-lg p-4"><h4 class="text-sm font-semibold text-error mb-2 flex items-center">
+<span class="material-symbols-outlined text-[18px] mr-1.5">warning</span>
+                            重要支付提示
+                        </h4>
+<ul class="text-xs text-on-error-container space-y-2 list-disc list-inside">
+<li class="font-bold">普通订单待支付 / 候补兑现待支付，系统不会自动扣款。</li>
+<li class="">请务必在 30 分钟内登录 12306 官方渠道手动完成支付。</li>
+<li class="">逾期未支付将导致订单失效并可能影响账号信用。</li>
+</ul></div>
+</div>
+<!-- Action Footer -->
+<div class="p-5 border-t border-outline-variant bg-surface shrink-0">
+<button class="w-full bg-primary hover:bg-primary-fixed text-on-primary font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center shadow-[0_0_15px_rgba(125,211,252,0.15)]">
+<span class="material-symbols-outlined mr-2 text-[20px]">rocket_launch</span>
+                        创建并启动任务
+                    </button>
+<button class="w-full mt-3 bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-medium py-2.5 rounded-lg transition-colors border border-outline-variant">
+                        仅保存草稿
+                    </button>
+</div>
+</aside>
+</div>
+</div>
+</body></html>

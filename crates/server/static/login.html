@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="zh-CN" style=""><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>12306-rs - 登录</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                "surface-variant": "#1a2438",
+                "on-surface": "#e0e8f0",
+                "on-primary-fixed-variant": "#004d73",
+                "tertiary": "#c8a0f0",
+                "on-secondary-fixed": "#0d1f2b",
+                "surface-dim": "#0f1524",
+                "surface-container-lowest": "#0a0e1a",
+                "primary-container": "#0e4d6e",
+                "inverse-surface": "#e0e8f0",
+                "error": "#ff6b6b",
+                "outline-variant": "#2a3a48",
+                "surface-container-high": "#1a2438",
+                "on-primary-fixed": "#001f2e",
+                "on-tertiary-fixed-variant": "#4d2a73",
+                "surface-bright": "#1a2438",
+                "on-surface-variant": "#a0b4c4",
+                "on-background": "#e0e8f0",
+                "inverse-primary": "#0a4c6e",
+                "on-error": "#1a0000",
+                "primary-fixed": "#c8eaff",
+                "on-secondary-container": "#c0d8e8",
+                "on-primary-container": "#c8eaff",
+                "on-error-container": "#ffb3b3",
+                "surface": "#0f1524",
+                "secondary-fixed": "#c0d8e8",
+                "tertiary-fixed": "#e8d0ff",
+                "primary": "#7dd3fc",
+                "on-secondary": "#001f2e",
+                "inverse-on-surface": "#0a0e1a",
+                "secondary-container": "#1a3a4e",
+                "surface-container-highest": "#202c42",
+                "on-tertiary-fixed": "#1a002e",
+                "secondary": "#88b4cc",
+                "outline": "#4a6070",
+                "on-tertiary-container": "#e8d0ff",
+                "tertiary-container": "#3d2060",
+                "surface-tint": "#7dd3fc",
+                "on-secondary-fixed-variant": "#2a4a5e",
+                "surface-container-low": "#111828",
+                "background": "#0a0e1a",
+                "secondary-fixed-dim": "#88b4cc",
+                "tertiary-fixed-dim": "#c8a0f0",
+                "primary-fixed-dim": "#7dd3fc",
+                "on-tertiary": "#1a002e",
+                "on-primary": "#001f2e",
+                "error-container": "#3d1414",
+                "surface-container": "#141c2e"
+            },
+            "borderRadius": {
+                "DEFAULT": "0.5rem",
+                "lg": "1rem",
+                "xl": "1.5rem",
+                "full": "9999px"
+            },
+            "fontFamily": {
+                "headline": ["Inter"],
+                "display": ["Inter"],
+                "body": ["Inter"],
+                "label": ["Inter"]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0a0e1a; /* Background fallback */
+        }
+        
+        /* Glassmorphism Utilities */
+        .glass-panel {
+            background: rgba(15, 21, 36, 0.6);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(125, 211, 252, 0.1);
+            box-shadow: 0 0 30px rgba(125, 211, 252, 0.05);
+        }
+        
+        .glass-input {
+            background: rgba(15, 21, 36, 0.4);
+            border: 1px solid rgba(125, 211, 252, 0.15);
+            color: #e0e8f0;
+            transition: all 0.2s ease-in-out;
+        }
+        
+        .glass-input:focus {
+            outline: none;
+            border-color: rgba(125, 211, 252, 0.5);
+            box-shadow: 0 0 15px rgba(125, 211, 252, 0.15);
+        }
+
+        .glass-button {
+            background: rgba(125, 211, 252, 0.15);
+            border: 1px solid rgba(125, 211, 252, 0.3);
+            color: #7dd3fc;
+            transition: all 0.2s ease-in-out;
+        }
+        
+        .glass-button:hover {
+            background: rgba(125, 211, 252, 0.25);
+            box-shadow: 0 0 20px rgba(125, 211, 252, 0.1);
+        }
+
+        .glass-button-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #e0e8f0;
+            transition: all 0.2s ease-in-out;
+        }
+        
+        .glass-button-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.05);
+            color: #7dd3fc;
+        }
+
+        /* Verification Placeholder Styling */
+        .verification-placeholder {
+            background: repeating-linear-gradient(
+                -45deg,
+                rgba(26, 36, 56, 0.5),
+                rgba(26, 36, 56, 0.5) 10px,
+                rgba(15, 21, 36, 0.5) 10px,
+                rgba(15, 21, 36, 0.5) 20px
+            );
+            border: 1px dashed rgba(125, 211, 252, 0.3);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface min-h-screen flex items-center justify-center relative overflow-hidden py-12">
+<!-- Decorative Background Elements -->
+<div class="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[100px] pointer-events-none"></div>
+<div class="absolute bottom-[-10%] right-[-10%] w-[30%] h-[30%] bg-tertiary/5 rounded-full blur-[80px] pointer-events-none"></div>
+<!-- Main Container -->
+<div class="w-full max-w-5xl px-6 grid grid-cols-1 lg:grid-cols-2 gap-8 z-10">
+<!-- Login Form Section -->
+<div class="glass-panel rounded-xl p-8 lg:p-12 flex flex-col justify-center">
+<div class="mb-10 text-center">
+<h1 class="text-3xl font-headline font-semibold tracking-tight text-primary mb-2">12306-rs</h1>
+<p class="text-on-surface-variant font-body text-sm">账号密码登录</p>
+</div>
+<form class="space-y-6">
+<!-- Account Input -->
+<div>
+<label class="block text-sm font-label text-on-surface-variant mb-2" for="account">账号</label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/70 text-[20px]">
+                            account_circle
+                        </span>
+<input class="glass-input w-full rounded-lg py-3 pl-10 pr-4 text-sm placeholder-on-surface-variant/40" id="account" placeholder="请输入 12306 账号" type="text"/>
+</div>
+</div>
+<!-- Password Input -->
+<div>
+<label class="block text-sm font-label text-on-surface-variant mb-2" for="password">密码</label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/70 text-[20px]">
+                            lock
+                        </span>
+<input class="glass-input w-full rounded-lg py-3 pl-10 pr-4 text-sm placeholder-on-surface-variant/40" id="password" placeholder="请输入密码" type="password"/>
+</div>
+</div>
+<!-- Status Indicator -->
+<div class="flex items-center gap-2 px-3 py-2 bg-surface-container-highest/50 rounded-lg border border-outline-variant/30">
+<span class="relative flex h-3 w-3">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-error opacity-75"></span>
+<span class="relative inline-flex rounded-full h-3 w-3 bg-error"></span>
+</span>
+<span class="text-xs text-error font-medium">当前状态：需人工滑块验证，登录阻塞中</span>
+</div>
+<!-- Blocked Tasks List -->
+<div class="bg-surface-container/30 rounded-lg border border-outline-variant/20 p-4">
+<h3 class="text-sm font-medium text-on-surface mb-3 flex items-center gap-2"><span class="material-symbols-outlined text-error text-[20px]">warning</span>
+<span class="text-error font-semibold">受阻任务列表 (需完成验证)</span></h3>
+<ul class="space-y-2"><li class="flex items-center justify-between text-xs p-2 bg-surface-container-highest/40 rounded border border-outline-variant/10"><div class="flex items-center gap-2 text-on-surface-variant"><span class="material-symbols-outlined text-[16px]">train</span>G123 (北京南 - 上海虹桥)</div><span class="text-error/80">登录失效</span></li><li class="flex items-center justify-between text-xs p-2 bg-surface-container-highest/40 rounded border border-outline-variant/10"><div class="flex items-center gap-2 text-on-surface-variant"><span class="material-symbols-outlined text-[16px]">train</span>D312 (上海 - 广州南)</div><span class="text-error/80">需滑块验证</span></li><li class="flex items-center justify-between text-xs p-2 bg-surface-container-highest/40 rounded border border-outline-variant/10"><div class="flex items-center gap-2 text-on-surface-variant"><span class="material-symbols-outlined text-[16px]">train</span>K567 (北京 - 天津)</div><span class="text-error/80">验证码待处理</span></li></ul>
+</div>
+<!-- Submit Buttons -->
+<div class="flex flex-col gap-3">
+<div class="flex gap-3">
+<button class="glass-button flex-[2] rounded-lg py-4 font-bold text-[16px] flex items-center justify-center gap-3 bg-primary/30 border-primary/60 shadow-lg shadow-primary/10 animate-pulse shadow-[0_0_30px_rgba(125,211,252,0.3)]" type="button">
+<span class="material-symbols-outlined text-[24px]">ads_click</span>
+            处理验证并恢复任务
+        </button>
+<button class="glass-button-secondary flex-1 rounded-lg py-3 font-semibold text-sm flex items-center justify-center gap-2" type="button">
+<span class="material-symbols-outlined text-[18px]">refresh</span>
+            重新登录
+        </button>
+</div>
+<button class="glass-button-secondary w-full rounded-lg py-2 text-sm flex items-center justify-center gap-2 border-dashed" disabled="" type="button">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+        恢复任务 (需先完成登录/验证)
+    </button>
+</div>
+</form>
+<div class="mt-6 text-center text-xs text-on-surface-variant/60">数据加密传输，保障您的账户安全 | 2026-01-01</div>
+</div>
+<!-- Manual Verification Section -->
+<div class="glass-panel rounded-xl p-8 lg:p-12 flex flex-col items-center justify-center relative overflow-hidden">
+<!-- subtle glowing border effect for this specific panel to draw attention to verification -->
+<div class="absolute inset-0 rounded-xl border-2 border-error/30 shadow-[0_0_20px_rgba(255,107,107,0.15)] pointer-events-none"></div>
+<div class="text-center mb-8">
+<span class="material-symbols-outlined text-5xl text-error mb-4 block animate-pulse" style="font-variation-settings: 'FILL' 1;">
+                    warning
+                </span>
+<h2 class="text-xl font-headline font-semibold text-on-surface mb-2">人工验证辅助入口</h2>
+<p class="text-sm text-error/90 font-medium">检测到滑块/验证码需求，请手动完成</p>
+</div>
+<!-- Verification Widget Placeholder -->
+<div class="w-full max-w-sm aspect-video verification-placeholder rounded-lg flex flex-col items-center justify-center p-6 text-center gap-4">
+<span class="material-symbols-outlined text-4xl text-on-surface-variant/50">
+                    touch_app
+                </span>
+<p class="text-sm text-on-surface-variant/70">点击左侧“处理验证”按钮<br/>此入口仅辅助加载验证组件，需人工完成</p>
+</div>
+<!-- Instructions/Status below verification -->
+<div class="mt-8 flex items-start gap-3 w-full max-w-sm p-4 bg-error/10 rounded-lg border border-error/20">
+<span class="material-symbols-outlined text-error text-[20px] mt-0.5">
+                    info
+                </span>
+<div class="text-xs text-on-surface-variant leading-relaxed">本系统<strong class="text-error">不具备自动破解验证码能力</strong>，由于 12306 安全策略，请点击按钮打开 12306 官方验证页面，由用户手动完成。验证成功后，登录流程将自动继续，方可恢复上述暂停的任务。</div>
+</div>
+</div>
+</div>
+</body></html>
