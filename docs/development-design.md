@@ -144,6 +144,7 @@ pub enum TaskStatus {
     CandidateSubmitting,
     CandidateSubmitted,
     CandidatePendingPayment,
+    ReconciliationRequired,
     Failed,
     Cancelled,
 }
@@ -155,6 +156,7 @@ pub enum TaskStatus {
 - `CandidateSubmitted`: 候补订单已提交，等待兑现。
 - `CandidatePendingPayment`: 候补兑现成功，等待用户支付。
 - `VerificationRequired`: 登录或提交链路被 12306 人工验证阻塞。
+- `ReconciliationRequired`: 提交请求超时或进程在提交中中断，必须核对官方订单后才能恢复。
 
 ### 5.5 OrderState
 
@@ -205,6 +207,7 @@ Querying -> VerificationRequired
 Querying -> Failed
 Submitting -> Querying
 Submitting -> PendingPayment
+Submitting -> ReconciliationRequired
 Submitting -> Failed
 ```
 
@@ -265,7 +268,7 @@ Expired -> LoggingIn
 
 ### 7.1 TaskRunner
 
-每个运行中任务由一个独立 async runner 管理。
+每个运行中任务由一个独立 worker 进程管理。`serve` 通过当前 CLI 二进制启动隐藏的 `task run-worker` 命令，避免 Web 和 CLI 复制两套下单逻辑。
 
 职责：
 
@@ -276,14 +279,16 @@ Expired -> LoggingIn
 - 推进普通下单或候补。
 - 写入任务日志。
 - 响应暂停、取消、服务关闭信号。
+- 服务启动时恢复 `running` 和 `querying` 任务；发现中断在提交态的任务时转入 `ReconciliationRequired`。
 
 ### 7.2 并发控制
 
-首期不做分布式，只在单进程内控制：
+首期不做分布式，在本机服务和 SQLite 范围内控制：
 
 - 多任务可以并发运行。
 - 同一个任务同一时间只有一个 runner。
 - 全局 12306 请求需要限速。
+- 跨 worker 查询通过 SQLite 限速槽协调。
 - 单任务查询间隔最小 1000ms，默认 3000ms。
 
 ### 7.3 重试与退避
@@ -294,6 +299,7 @@ Expired -> LoggingIn
 - 12306 限流或风控提示：增加退避时间并记录 warning。
 - 登录过期：任务进入 `WaitingLogin` 或 `VerificationRequired`。
 - 提交失败：根据错误类型决定回到查询或进入失败。
+- 提交超时：进入 `ReconciliationRequired`，禁止自动重试。
 
 ## 8. 12306 客户端设计
 
@@ -441,6 +447,14 @@ smoke test 不做大规模逆向，不追求覆盖所有边缘字段。
 - `created_at text not null`
 - `updated_at text not null`
 
+### 9.12 task_execution_settings
+
+保存 `depart_after`、`depart_before`、`start_at` 和 `choose_seats`。座位位置按乘客顺序编码，例如两位乘客选择 A、F 时保存为 `1A1F`。
+
+### 9.13 request_rate_limits
+
+保存跨 worker 的下一次允许请求时间，用于本机全局限速。SQLite 使用 WAL、5 秒 busy timeout 和 `synchronous = normal`。
+
 ## 10. Web API 设计
 
 ### 10.1 Session API
@@ -474,12 +488,16 @@ GET /api/tickets/query?from=SHH&to=BJP&date=2026-07-10
 POST   /api/tasks
 GET    /api/tasks
 GET    /api/tasks/:id
+PUT    /api/tasks/:id
 POST   /api/tasks/:id/start
 POST   /api/tasks/:id/pause
 POST   /api/tasks/:id/resume
 POST   /api/tasks/:id/cancel
 GET    /api/tasks/:id/logs
+GET    /api/tasks/:id/new-trains
 ```
+
+除 `/api/health` 外，配置 API token 后所有 `/api/*` 请求都必须携带 `Authorization: Bearer <token>`。非回环监听禁止无 token 启动。
 
 ### 10.4 Settings API
 
@@ -499,6 +517,7 @@ PUT /api/settings
 12306-rs status
 12306-rs query --from 上海 --to 北京 --date 2026-07-10
 12306-rs task create
+12306-rs task edit <task-id>
 12306-rs task list
 12306-rs task show <task-id>
 12306-rs task start <task-id>
@@ -506,6 +525,7 @@ PUT /api/settings
 12306-rs task resume <task-id>
 12306-rs task cancel <task-id>
 12306-rs task logs <task-id>
+12306-rs task reconcile <task-id> --confirmed-no-order
 ```
 
 CLI 输出要求：

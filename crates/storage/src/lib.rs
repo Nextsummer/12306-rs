@@ -23,6 +23,11 @@ create table if not exists app_settings (
     updated_at text not null
 );
 
+create table if not exists request_rate_limits (
+    name text primary key,
+    next_allowed_at_ms integer not null
+);
+
 create table if not exists sessions (
     id text primary key,
     state text not null,
@@ -93,6 +98,14 @@ create table if not exists task_new_train_settings (
     new_trains_only integer not null
 );
 
+create table if not exists task_execution_settings (
+    task_id text primary key references ticket_tasks(id) on delete cascade,
+    depart_after text,
+    depart_before text,
+    start_at text,
+    choose_seats text
+);
+
 create table if not exists task_train_monitor_dates (
     task_id text not null references ticket_tasks(id) on delete cascade,
     travel_date text not null,
@@ -154,6 +167,8 @@ create table if not exists standby_orders (
     created_at text not null,
     updated_at text not null
 );
+
+pragma user_version = 2;
 "#;
 
 #[derive(Debug, Error)]
@@ -199,6 +214,10 @@ impl Database {
         }
 
         let connection = Connection::open(path)?;
+        connection.busy_timeout(std::time::Duration::from_secs(5))?;
+        connection.execute_batch(
+            "pragma journal_mode = wal; pragma synchronous = normal; pragma foreign_keys = on;",
+        )?;
         secure_database_file(path)?;
         let database = Self {
             connection: Arc::new(Mutex::new(connection)),
@@ -208,8 +227,10 @@ impl Database {
     }
 
     pub fn open_in_memory() -> Result<Self, StorageError> {
+        let connection = Connection::open_in_memory()?;
+        connection.busy_timeout(std::time::Duration::from_secs(5))?;
         let database = Self {
-            connection: Arc::new(Mutex::new(Connection::open_in_memory()?)),
+            connection: Arc::new(Mutex::new(connection)),
         };
         database.init()?;
         Ok(database)
@@ -262,6 +283,37 @@ impl Database {
             .map_err(|_| StorageError::LockPoisoned)?;
         connection.execute("delete from app_settings where key = ?1", params![key])?;
         Ok(())
+    }
+
+    pub fn reserve_request_slot(
+        &self,
+        name: &str,
+        min_spacing_ms: u64,
+    ) -> Result<u64, StorageError> {
+        let mut connection = self
+            .connection
+            .lock()
+            .map_err(|_| StorageError::LockPoisoned)?;
+        let transaction =
+            connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let now = Utc::now().timestamp_millis();
+        let current = transaction
+            .query_row(
+                "select next_allowed_at_ms from request_rate_limits where name = ?1",
+                params![name],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(now);
+        let reserved_at = current.max(now);
+        transaction.execute(
+            r#"
+            insert into request_rate_limits (name, next_allowed_at_ms) values (?1, ?2)
+            on conflict(name) do update set next_allowed_at_ms = excluded.next_allowed_at_ms
+            "#,
+            params![name, reserved_at.saturating_add(min_spacing_ms as i64)],
+        )?;
+        transaction.commit()?;
+        Ok(reserved_at.saturating_sub(now) as u64)
     }
 
     pub fn save_passenger(&self, passenger: &Passenger) -> Result<(), StorageError> {
@@ -484,6 +536,37 @@ impl Database {
         Ok(())
     }
 
+    pub fn save_task_execution_settings(
+        &self,
+        task_id: &str,
+        settings: &TaskExecutionSettings,
+    ) -> Result<(), StorageError> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| StorageError::LockPoisoned)?;
+        connection.execute(
+            r#"
+            insert into task_execution_settings (
+                task_id, depart_after, depart_before, start_at, choose_seats
+            ) values (?1, ?2, ?3, ?4, ?5)
+            on conflict(task_id) do update set
+                depart_after = excluded.depart_after,
+                depart_before = excluded.depart_before,
+                start_at = excluded.start_at,
+                choose_seats = excluded.choose_seats
+            "#,
+            params![
+                task_id,
+                settings.depart_after.as_deref(),
+                settings.depart_before.as_deref(),
+                settings.start_at.as_deref(),
+                settings.choose_seats.as_deref()
+            ],
+        )?;
+        Ok(())
+    }
+
     pub fn list_task_summaries(&self) -> Result<Vec<TaskSummary>, StorageError> {
         let connection = self
             .connection
@@ -552,6 +635,10 @@ impl Database {
                         seat_types: Vec::new(),
                         train_include: Vec::new(),
                         train_exclude: Vec::new(),
+                        depart_after: None,
+                        depart_before: None,
+                        start_at: None,
+                        choose_seats: None,
                     })
                 },
             )
@@ -587,6 +674,26 @@ impl Database {
             "select train_no from task_train_filters where task_id = ?1 and filter_type = 'exclude' order by train_no asc",
             task_id,
         )?;
+        if let Ok(settings) = connection.query_row(
+            r#"
+            select depart_after, depart_before, start_at, choose_seats
+            from task_execution_settings where task_id = ?1
+            "#,
+            params![task_id],
+            |row| {
+                Ok(TaskExecutionSettings {
+                    depart_after: row.get(0)?,
+                    depart_before: row.get(1)?,
+                    start_at: row.get(2)?,
+                    choose_seats: row.get(3)?,
+                })
+            },
+        ) {
+            task.depart_after = settings.depart_after;
+            task.depart_before = settings.depart_before;
+            task.start_at = settings.start_at;
+            task.choose_seats = settings.choose_seats;
+        }
 
         Ok(task)
     }
@@ -771,6 +878,17 @@ impl Database {
         Ok(changed == 1)
     }
 
+    pub fn release_task_train_actions(&self, task_id: &str) -> Result<usize, StorageError> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| StorageError::LockPoisoned)?;
+        Ok(connection.execute(
+            "delete from task_train_claims where task_id = ?1",
+            params![task_id],
+        )?)
+    }
+
     pub fn update_task_status(
         &self,
         task_id: &str,
@@ -848,6 +966,16 @@ impl Database {
                 context_json,
                 Utc::now().to_rfc3339()
             ],
+        )?;
+        connection.execute(
+            r#"
+            delete from task_logs
+            where task_id = ?1 and rowid not in (
+                select rowid from task_logs where task_id = ?1
+                order by rowid desc limit 5000
+            )
+            "#,
+            params![task_id],
         )?;
         Ok(())
     }
@@ -1081,6 +1209,18 @@ pub struct TaskDetails {
     pub seat_types: Vec<String>,
     pub train_include: Vec<String>,
     pub train_exclude: Vec<String>,
+    pub depart_after: Option<String>,
+    pub depart_before: Option<String>,
+    pub start_at: Option<String>,
+    pub choose_seats: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct TaskExecutionSettings {
+    pub depart_after: Option<String>,
+    pub depart_before: Option<String>,
+    pub start_at: Option<String>,
+    pub choose_seats: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1268,11 +1408,24 @@ mod tests {
         .unwrap();
         let task_id = task.id.0.to_string();
         database.save_task(&task).unwrap();
+        database
+            .save_task_execution_settings(
+                &task_id,
+                &TaskExecutionSettings {
+                    depart_after: Some("08:00".to_string()),
+                    depart_before: Some("18:00".to_string()),
+                    start_at: Some("2026-07-10T00:00:00+00:00".to_string()),
+                    choose_seats: Some("1A".to_string()),
+                },
+            )
+            .unwrap();
 
         let details = database.get_task_details(&task_id).unwrap();
         assert_eq!(details.dates, vec!["2026-07-10"]);
         assert_eq!(details.seat_types, vec!["second_class"]);
         assert_eq!(details.train_include, vec!["G102"]);
+        assert_eq!(details.depart_after.as_deref(), Some("08:00"));
+        assert_eq!(details.choose_seats.as_deref(), Some("1A"));
 
         database
             .save_order(&task_id, "E123456789", "G102", "2026-07-10", "second_class")
@@ -1436,6 +1589,12 @@ mod tests {
                 .try_claim_train_action(&task_id, "2026-07-10", "G2", "order")
                 .unwrap()
         );
+        assert_eq!(database.release_task_train_actions(&task_id).unwrap(), 1);
+        assert!(
+            database
+                .try_claim_train_action(&task_id, "2026-07-10", "G2", "order")
+                .unwrap()
+        );
 
         task.from.code = "AOH".to_string();
         database.save_task(&task).unwrap();
@@ -1460,5 +1619,13 @@ mod tests {
         database.save_passenger(&passenger).unwrap();
 
         assert_eq!(database.list_passengers().unwrap(), vec![passenger]);
+    }
+
+    #[test]
+    fn reserves_global_request_slots() {
+        let database = Database::open_in_memory().unwrap();
+
+        assert_eq!(database.reserve_request_slot("query", 500).unwrap(), 0);
+        assert!(database.reserve_request_slot("query", 500).unwrap() >= 490);
     }
 }

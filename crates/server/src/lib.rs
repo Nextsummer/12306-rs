@@ -1,32 +1,43 @@
-use std::{net::SocketAddr, path::PathBuf, sync::OnceLock, time::Duration};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    path::PathBuf,
+    sync::{Arc, Mutex, OnceLock},
+    time::Duration,
+};
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
-    http::StatusCode,
+    extract::{Path, Query, Request, State},
+    http::{StatusCode, header::AUTHORIZATION},
+    middleware::{self, Next},
     response::Html,
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use rs12306_client_12306::{LoginRequest, LoginResult, login_12306};
 use rs12306_core::{
     DEFAULT_QUERY_INTERVAL_MS, MIN_QUERY_INTERVAL_MS, NewTicketTask, NewTrainPolicy, Passenger,
-    PassengerId, PassengerType, SeatType, Station, TaskStatus, TrainFilter, TrainFilterKind,
+    PassengerId, PassengerType, SeatType, Station, TaskId, TaskStatus, TrainFilter,
+    TrainFilterKind,
 };
 use rs12306_storage::{
-    DEFAULT_DATABASE_PATH, Database, NewTrainRecord, StorageError, TaskDetails, TaskLog,
-    TaskSummary,
+    DEFAULT_DATABASE_PATH, Database, NewTrainRecord, StorageError, TaskDetails,
+    TaskExecutionSettings, TaskLog, TaskSummary,
 };
 use serde::{Deserialize, Serialize};
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tower_http::trace::TraceLayer;
 use uuid::Uuid;
+
+pub mod notification;
 
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
     pub database_path: PathBuf,
+    pub api_token: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -35,6 +46,7 @@ impl Default for ServerConfig {
             host: "127.0.0.1".to_string(),
             port: 12306,
             database_path: PathBuf::from(DEFAULT_DATABASE_PATH),
+            api_token: None,
         }
     }
 }
@@ -49,10 +61,21 @@ impl ServerConfig {
 pub struct AppState {
     database: Database,
     config: ServerConfig,
+    task_runner: TaskRunner,
 }
 
 pub fn router(database: Database, config: ServerConfig) -> Router {
-    let state = AppState { database, config };
+    let task_runner = TaskRunner::new(config.database_path.clone());
+    router_with_runner(database, config, task_runner)
+}
+
+fn router_with_runner(database: Database, config: ServerConfig, task_runner: TaskRunner) -> Router {
+    let api_token = config.api_token.clone();
+    let state = AppState {
+        database,
+        config,
+        task_runner,
+    };
 
     Router::new()
         .route("/", get(page_dashboard))
@@ -78,27 +101,180 @@ pub fn router(database: Database, config: ServerConfig) -> Router {
         )
         .route("/api/tickets/query", get(query_tickets))
         .route("/api/tasks", get(list_tasks).post(create_task))
-        .route("/api/tasks/{task_id}", get(get_task))
+        .route("/api/tasks/{task_id}", get(get_task).put(update_task))
         .route("/api/tasks/{task_id}/start", post(start_task))
         .route("/api/tasks/{task_id}/pause", post(pause_task))
         .route("/api/tasks/{task_id}/resume", post(resume_task))
         .route("/api/tasks/{task_id}/cancel", post(cancel_task))
         .route("/api/tasks/{task_id}/logs", get(list_task_logs))
         .route("/api/tasks/{task_id}/new-trains", get(list_new_trains))
-        .layer(CorsLayer::permissive())
+        .layer(middleware::from_fn_with_state(api_token, require_api_token))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
 
 pub async fn serve(config: ServerConfig) -> anyhow::Result<()> {
+    validate_server_security(&config)?;
     let database = Database::open(&config.database_path)?;
     let addr = config.socket_addr()?;
-    let app = router(database, config);
+    let task_runner = TaskRunner::new(config.database_path.clone());
+    task_runner.recover(&database)?;
+    let app = router_with_runner(database, config, task_runner.clone());
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
     tracing::info!("12306-rs server listening on http://{addr}");
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+    task_runner.shutdown().await;
     Ok(())
+}
+
+fn validate_server_security(config: &ServerConfig) -> anyhow::Result<()> {
+    let host_is_loopback = config
+        .host
+        .parse::<std::net::IpAddr>()
+        .map(|address| address.is_loopback())
+        .unwrap_or(config.host == "localhost");
+    if !host_is_loopback
+        && config
+            .api_token
+            .as_deref()
+            .is_none_or(|token| token.trim().len() < 16)
+    {
+        anyhow::bail!("non-loopback listening requires --api-token with at least 16 characters");
+    }
+    Ok(())
+}
+
+async fn require_api_token(
+    State(api_token): State<Option<String>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if !request.uri().path().starts_with("/api/")
+        || request.uri().path() == "/api/health"
+        || api_token.is_none()
+    {
+        return next.run(request).await;
+    }
+    let expected = format!("Bearer {}", api_token.as_deref().unwrap_or_default());
+    let authorized = request
+        .headers()
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value == expected);
+    if authorized {
+        next.run(request).await
+    } else {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "missing or invalid API token".to_string(),
+            }),
+        )
+            .into_response()
+    }
+}
+
+#[derive(Debug, Clone)]
+struct TaskRunner {
+    database_path: PathBuf,
+    workers: Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>,
+}
+
+impl TaskRunner {
+    fn new(database_path: PathBuf) -> Self {
+        Self {
+            database_path,
+            workers: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    fn recover(&self, database: &Database) -> anyhow::Result<()> {
+        for task in database.list_task_summaries()? {
+            if matches!(task.status.as_str(), "running" | "querying") {
+                self.spawn(&task.id)?;
+                database.append_task_log(
+                    &task.id,
+                    "info",
+                    "task_recovered",
+                    "background worker recovered after service start",
+                    None,
+                )?;
+            } else if matches!(task.status.as_str(), "submitting" | "candidate_submitting") {
+                database.update_task_status(&task.id, TaskStatus::ReconciliationRequired)?;
+                database.append_task_log(
+                    &task.id,
+                    "warn",
+                    "submission_reconciliation_required",
+                    "submission was interrupted; check official 12306, then reconcile before retrying",
+                    None,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    fn spawn(&self, task_id: &str) -> anyhow::Result<bool> {
+        let mut workers = self
+            .workers
+            .lock()
+            .map_err(|_| anyhow::anyhow!("task runner lock poisoned"))?;
+        if workers.contains_key(task_id) {
+            return Ok(false);
+        }
+
+        let mut child = tokio::process::Command::new(std::env::current_exe()?)
+            .arg("--database")
+            .arg(&self.database_path)
+            .arg("task")
+            .arg("run-worker")
+            .arg(task_id)
+            .kill_on_drop(true)
+            .spawn()?;
+        let id = task_id.to_string();
+        let active = self.workers.clone();
+        let handle = tokio::spawn(async move {
+            match child.wait().await {
+                Ok(status) if status.success() => {
+                    tracing::info!(task_id = %id, "background task worker stopped");
+                }
+                Ok(status) => {
+                    tracing::error!(task_id = %id, %status, "background task worker failed");
+                }
+                Err(error) => {
+                    tracing::error!(task_id = %id, %error, "failed to wait for task worker");
+                }
+            }
+            if let Ok(mut workers) = active.lock() {
+                workers.remove(&id);
+            }
+        });
+        workers.insert(task_id.to_string(), handle.abort_handle());
+        Ok(true)
+    }
+
+    async fn shutdown(&self) {
+        let handles = self
+            .workers
+            .lock()
+            .map(|mut workers| {
+                workers
+                    .drain()
+                    .map(|(_, handle)| handle)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        for handle in handles {
+            handle.abort();
+        }
+        tokio::task::yield_now().await;
+    }
+}
+
+async fn shutdown_signal() {
+    let _ = tokio::signal::ctrl_c().await;
 }
 
 async fn health() -> Json<HealthResponse> {
@@ -239,6 +415,7 @@ const UI_BOOTSTRAP_SCRIPT: &str = r#"
     candidate_submitting: ["hourglass_top", "正在提交候补", "bg-secondary/10 border-secondary/20 text-secondary"],
     candidate_submitted: ["hourglass_empty", "候补已提交等待兑现", "bg-secondary/20 border-secondary/40 text-secondary"],
     candidate_pending_payment: ["confirmation_number", "候补兑现成功待支付", "bg-primary/20 border-primary/40 text-primary"],
+    reconciliation_required: ["fact_check", "需要核对官方订单", "bg-error/10 border-error/30 text-error"],
     failed: ["report", "失败", "bg-error/20 border-error/40 text-error"],
     cancelled: ["stop_circle", "已取消", "bg-surface-variant/40 border-outline-variant text-on-surface-variant"]
   };
@@ -268,7 +445,10 @@ const UI_BOOTSTRAP_SCRIPT: &str = r#"
   }
 
   async function fetchJson(url, options) {
-    const response = await fetch(url, options);
+    const token = localStorage.getItem("rs12306_api_token");
+    const headers = new Headers(options?.headers || {});
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    const response = await fetch(url, { ...options, headers });
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
     return response.json();
   }
@@ -1081,10 +1261,12 @@ async fn session_verification_open() -> Json<VerificationOpenResponse> {
 }
 
 async fn session_verification_complete(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
 ) -> Result<Json<SessionStatusResponse>, ApiError> {
-    state.database.set_session_state("logged_in")?;
-    Ok(Json(session_response("logged_in".to_string())))
+    Err(ApiError::BadRequest(
+        "browser verification cookies cannot be imported safely; use QR login or CLI SMS verification"
+            .to_string(),
+    ))
 }
 
 async fn query_tickets(
@@ -1175,9 +1357,13 @@ async fn create_task(
     State(state): State<AppState>,
     Json(request): Json<CreateTaskRequest>,
 ) -> Result<(StatusCode, Json<TaskDetails>), ApiError> {
+    let execution_settings = request.execution_settings()?;
     let task = request.into_task().map_err(ApiError::BadRequest)?;
     let task_id = task.id.0.to_string();
     state.database.save_task(&task)?;
+    state
+        .database
+        .save_task_execution_settings(&task_id, &execution_settings)?;
     state.database.append_task_log(
         &task_id,
         "info",
@@ -1191,6 +1377,42 @@ async fn create_task(
     ))
 }
 
+async fn update_task(
+    State(state): State<AppState>,
+    Path(task_id): Path<String>,
+    Json(request): Json<CreateTaskRequest>,
+) -> Result<Json<TaskDetails>, ApiError> {
+    let current = state.database.get_task_details(&task_id)?;
+    if current.status != TaskStatus::Created.as_str() {
+        return Err(ApiError::BadRequest(
+            "only created tasks can be edited".to_string(),
+        ));
+    }
+    let execution_settings = request.execution_settings()?;
+    let mut task = request.into_task().map_err(ApiError::BadRequest)?;
+    task.id = TaskId(
+        Uuid::parse_str(&task_id)
+            .map_err(|_| ApiError::BadRequest("invalid task id".to_string()))?,
+    );
+    task.status = TaskStatus::Created;
+    task.created_at = DateTime::parse_from_rfc3339(&current.created_at)
+        .map_err(|error| ApiError::Internal(error.to_string()))?
+        .with_timezone(&Utc);
+    task.updated_at = Utc::now();
+    state.database.save_task(&task)?;
+    state
+        .database
+        .save_task_execution_settings(&task_id, &execution_settings)?;
+    state.database.append_task_log(
+        &task_id,
+        "info",
+        "task_updated",
+        "task configuration updated through Web API",
+        None,
+    )?;
+    Ok(Json(state.database.get_task_details(&task_id)?))
+}
+
 async fn get_task(
     State(state): State<AppState>,
     Path(task_id): Path<String>,
@@ -1202,7 +1424,7 @@ async fn start_task(
     State(state): State<AppState>,
     Path(task_id): Path<String>,
 ) -> Result<Json<TaskDetails>, ApiError> {
-    update_task_status(state, task_id, TaskStatus::Running)
+    start_background_task(state, task_id)
 }
 
 async fn pause_task(
@@ -1216,7 +1438,7 @@ async fn resume_task(
     State(state): State<AppState>,
     Path(task_id): Path<String>,
 ) -> Result<Json<TaskDetails>, ApiError> {
-    update_task_status(state, task_id, TaskStatus::Running)
+    start_background_task(state, task_id)
 }
 
 async fn cancel_task(
@@ -1248,6 +1470,34 @@ fn update_task_status(
     Ok(Json(state.database.update_task_status(&task_id, status)?))
 }
 
+fn start_background_task(state: AppState, task_id: String) -> Result<Json<TaskDetails>, ApiError> {
+    let task = state
+        .database
+        .update_task_status(&task_id, TaskStatus::Running)?;
+    if let Err(error) = state.task_runner.spawn(&task_id) {
+        let message = format!("failed to start background worker: {error}");
+        state
+            .database
+            .update_task_status(&task_id, TaskStatus::Failed)?;
+        state.database.append_task_log(
+            &task_id,
+            "error",
+            "background_worker_start_failed",
+            &message,
+            None,
+        )?;
+        return Err(ApiError::Internal(message));
+    }
+    state.database.append_task_log(
+        &task_id,
+        "info",
+        "background_worker_started",
+        "task is running in a background worker",
+        None,
+    )?;
+    Ok(Json(task))
+}
+
 #[derive(Debug, Deserialize)]
 struct CreateTaskRequest {
     from_name: String,
@@ -1275,6 +1525,14 @@ struct CreateTaskRequest {
     query_interval_ms: Option<u64>,
     #[serde(default)]
     remark: Option<String>,
+    #[serde(default)]
+    depart_after: Option<String>,
+    #[serde(default)]
+    depart_before: Option<String>,
+    #[serde(default)]
+    start_at: Option<String>,
+    #[serde(default)]
+    seat_positions: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1531,6 +1789,34 @@ fn clean_seat(value: Option<&str>) -> &str {
 }
 
 impl CreateTaskRequest {
+    fn execution_settings(&self) -> Result<TaskExecutionSettings, ApiError> {
+        let depart_after = normalize_time(self.depart_after.as_deref(), "depart_after")?;
+        let depart_before = normalize_time(self.depart_before.as_deref(), "depart_before")?;
+        let start_at = self
+            .start_at
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| {
+                DateTime::parse_from_rfc3339(value)
+                    .map(|value| value.with_timezone(&Utc).to_rfc3339())
+                    .map_err(|_| {
+                        ApiError::BadRequest("start_at must be an RFC 3339 timestamp".to_string())
+                    })
+            })
+            .transpose()?;
+        let choose_seats = normalize_task_seat_positions(
+            &self.seat_positions,
+            &self.seat_preferences,
+            self.passenger_ids.len(),
+        )?;
+        Ok(TaskExecutionSettings {
+            depart_after,
+            depart_before,
+            start_at,
+            choose_seats,
+        })
+    }
+
     fn into_task(self) -> Result<rs12306_core::TicketTask, String> {
         NewTicketTask {
             from: Station {
@@ -1556,6 +1842,69 @@ impl CreateTaskRequest {
         .build()
         .map_err(|error| error.to_string())
     }
+}
+
+fn normalize_time(value: Option<&str>, field: &str) -> Result<Option<String>, ApiError> {
+    value
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| {
+            NaiveTime::parse_from_str(value.trim(), "%H:%M")
+                .map(|value| value.format("%H:%M").to_string())
+                .map_err(|_| ApiError::BadRequest(format!("{field} must use HH:MM")))
+        })
+        .transpose()
+}
+
+fn normalize_task_seat_positions(
+    positions: &[String],
+    seats: &[SeatType],
+    passenger_count: usize,
+) -> Result<Option<String>, ApiError> {
+    if positions.is_empty() {
+        return Ok(None);
+    }
+    if positions.len() != passenger_count {
+        return Err(ApiError::BadRequest(
+            "seat_positions must contain one position per passenger".to_string(),
+        ));
+    }
+    let seat = seats
+        .iter()
+        .copied()
+        .find(|seat| {
+            matches!(
+                seat,
+                SeatType::Business | SeatType::FirstClass | SeatType::SecondClass
+            )
+        })
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "seat_positions require business, first_class, or second_class".to_string(),
+            )
+        })?;
+    let mut choose_seats = String::new();
+    for position in positions {
+        let position = position.trim().to_uppercase();
+        let letter = position
+            .chars()
+            .last()
+            .ok_or_else(|| ApiError::BadRequest("seat position cannot be empty".to_string()))?;
+        let valid = match seat {
+            SeatType::Business => matches!(letter, 'A' | 'C' | 'F'),
+            SeatType::FirstClass => matches!(letter, 'A' | 'C' | 'D' | 'F'),
+            SeatType::SecondClass => matches!(letter, 'A' | 'B' | 'C' | 'D' | 'F'),
+            _ => false,
+        };
+        if !valid {
+            return Err(ApiError::BadRequest(format!(
+                "seat position {letter} is invalid for {}",
+                seat.as_str()
+            )));
+        }
+        choose_seats.push('1');
+        choose_seats.push(letter);
+    }
+    Ok(Some(choose_seats))
 }
 
 fn parse_train_filters(include: Vec<String>, exclude: Vec<String>) -> Vec<TrainFilter> {
@@ -1641,6 +1990,7 @@ fn session_response(state: String) -> SessionStatusResponse {
 pub enum ApiError {
     Storage(StorageError),
     BadRequest(String),
+    Internal(String),
 }
 
 impl From<StorageError> for ApiError {
@@ -1661,6 +2011,7 @@ impl IntoResponse for ApiError {
             ),
             Self::Storage(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
             Self::BadRequest(message) => (StatusCode::BAD_REQUEST, message),
+            Self::Internal(message) => (StatusCode::INTERNAL_SERVER_ERROR, message),
         };
         (status, Json(ErrorResponse { error: message })).into_response()
     }
@@ -1695,5 +2046,34 @@ mod tests {
         assert_eq!(stations[0].name, "上海");
         assert_eq!(stations[0].code, "SHH");
         assert_eq!(stations[1].pinyin, "jiaxing");
+    }
+
+    #[test]
+    fn requires_token_for_non_loopback_listening() {
+        let mut config = ServerConfig {
+            host: "0.0.0.0".to_string(),
+            ..ServerConfig::default()
+        };
+        assert!(validate_server_security(&config).is_err());
+
+        config.api_token = Some("0123456789abcdef".to_string());
+        assert!(validate_server_security(&config).is_ok());
+    }
+
+    #[test]
+    fn normalizes_one_seat_position_per_passenger() {
+        assert_eq!(
+            normalize_task_seat_positions(
+                &["A".to_string(), "F".to_string()],
+                &[SeatType::SecondClass],
+                2,
+            )
+            .unwrap()
+            .as_deref(),
+            Some("1A1F")
+        );
+        assert!(
+            normalize_task_seat_positions(&["B".to_string()], &[SeatType::Business], 1,).is_err()
+        );
     }
 }

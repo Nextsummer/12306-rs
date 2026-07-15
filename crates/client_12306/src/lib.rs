@@ -25,6 +25,8 @@ pub enum RailwayClientError {
     NotConfigured,
     #[error("request failed: {0}")]
     RequestFailed(String),
+    #[error("submission result is unknown: {0}")]
+    SubmissionUnknown(String),
 }
 
 pub type Result<T> = std::result::Result<T, RailwayClientError>;
@@ -673,7 +675,7 @@ pub async fn submit_12306_waitlist(
         }
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
-    Err(RailwayClientError::RequestFailed(
+    Err(RailwayClientError::SubmissionUnknown(
         "waitlist queue timed out; check official 12306 before retrying".to_string(),
     ))
 }
@@ -1107,7 +1109,7 @@ where
         }
         tokio::time::sleep(Duration::from_secs(3)).await;
     }
-    Err(RailwayClientError::RequestFailed(
+    Err(RailwayClientError::SubmissionUnknown(
         "order queue timed out after 60 seconds; check official 12306 before retrying".to_string(),
     ))
 }

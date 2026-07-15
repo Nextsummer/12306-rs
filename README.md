@@ -14,7 +14,7 @@
 - 同步 12306 常用联系人，本地仅展示脱敏身份信息。
 - 普通订单提交、排队进度输出和待支付提醒。
 - 指定车次、席别、多乘客和高铁/动车座位偏好。
-- 前台定时下单。
+- SQLite 持久化定时下单，服务重启后可恢复尚未到时的任务。
 - 多日期、多席别、多车次过滤的抢票任务。
 - 新增车次基线监控、增开/放票通知和自动下单。
 - 无座、候补和强候补。
@@ -80,7 +80,7 @@ make docker-stop
 
 ## Web UI
 
-> **未完成：** Web UI 当前用于页面预览、任务配置和状态查看，部分交互仍是原型。Web 页面中的“启动任务”目前只更新 SQLite 任务状态，不会在服务端启动后台查询、通知或下单执行器。真实余票查询和任务执行请使用 CLI。
+> **未完成：** Web UI 当前已接入真实查询、任务配置、后台启动和状态查看，但部分页面与交互仍处于原型阶段。CLI 仍是功能最完整的入口。
 
 ```bash
 ./12306-rs serve --host 127.0.0.1 --port 12306
@@ -160,7 +160,7 @@ make docker-stop
   --passenger-id <本地乘车人ID>
 ```
 
-定时下单是前台等待，进程退出后失效。为避免误操作，使用 `--at` 时必须同时传入 `--yes`。
+使用 `--at` 时会先把任务和启动时间保存到 SQLite，再在当前终端等待执行；为避免误操作，必须同时传入 `--yes`。等待进程中断后，启动 `12306-rs serve` 会恢复处于运行或查询状态的任务。
 
 ## 抢票任务
 
@@ -175,6 +175,7 @@ make docker-stop
   --date <YYYY-MM-DD> \
   --seat second_class \
   --include-train <车次> \
+  --seat-position A \
   --enable-waitlist \
   --enable-strong-waitlist \
   --passenger-id <本地乘车人ID>
@@ -196,7 +197,15 @@ make docker-stop
 ./12306-rs task logs <任务ID>
 ```
 
-多个任务可以分别由多个 CLI 进程运行。开启强候补后，无符合条件余票但存在匹配候补机会时，系统会优先提交候补并停止继续刷票。候补接口已接入，但尚未执行真实候补订单验证，首次使用请谨慎确认。
+通过 Web API 或 Web UI 启动的任务由 `serve` 在后台运行；服务重启后会自动恢复 `running` 和 `querying` 任务。任务可使用 `--start-at` 持久化启动时间，使用可重复的 `--seat-position` 为每位乘客选择座位位置，例如两位乘客传 `--seat-position A --seat-position F`。未启动的任务可用 `task edit <任务ID> <完整配置>` 修改。
+
+如果下单请求超时导致结果未知，任务会进入 `reconciliation_required`，不会自动重复提交。请先在官方 12306 核对订单；确认没有生成订单后再执行：
+
+```bash
+./12306-rs task reconcile <任务ID> --confirmed-no-order
+```
+
+多个任务可以分别由多个 CLI 进程运行，也可以由一个 `serve` 进程管理多个后台 worker。开启强候补后，无符合条件余票但存在匹配候补机会时，系统会优先提交候补并停止继续刷票。候补提交接口已接入；候补长期兑现状态尚未自动同步，请在官方 12306 中核对。
 
 监控普通任务中新出现的匹配车次，并允许自动下单：
 
@@ -255,8 +264,14 @@ make docker-stop
 
 ```bash
 docker build -t 12306-rs .
-docker run --rm -p 12306:12306 -v 12306-rs-data:/data 12306-rs
+docker run --rm \
+  -p 127.0.0.1:12306:12306 \
+  -e RS12306_API_TOKEN='<至少16位随机字符串>' \
+  -v 12306-rs-data:/data \
+  12306-rs
 ```
+
+服务默认只允许无 token 的本机回环监听。监听非回环地址（Docker 容器内默认为 `0.0.0.0`）时必须配置至少 16 位 API token。远程使用 Web UI 时，在浏览器控制台设置 `localStorage.setItem('rs12306_api_token', '<token>')` 后刷新页面；`/api/health` 不要求 token。
 
 容器监听 `0.0.0.0:12306`，SQLite 数据保存在 `/data/12306-rs.sqlite`。
 

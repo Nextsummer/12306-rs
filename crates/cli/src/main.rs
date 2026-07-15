@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, bail};
-use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
+use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 use clap::{Args, Parser, Subcommand};
 use rs12306_client_12306::{
     LoginRequest, LoginResult, OrderQueueUpdate, RailwayClientError, RealSubmitOrderRequest,
@@ -16,13 +16,11 @@ use rs12306_client_12306::{
 };
 use rs12306_core::{
     DEFAULT_QUERY_INTERVAL_MS, NewTicketTask, NewTrainPolicy, Passenger, PassengerId,
-    PassengerType, SeatType, Station, TaskStatus, TrainFilter, TrainFilterKind,
+    PassengerType, SeatType, Station, TaskId, TaskStatus, TrainFilter, TrainFilterKind,
 };
-use rs12306_server::{ServerConfig, query_12306_tickets, serve};
-use rs12306_storage::{DEFAULT_DATABASE_PATH, Database};
+use rs12306_server::{ServerConfig, notification, query_12306_tickets, serve};
+use rs12306_storage::{DEFAULT_DATABASE_PATH, Database, TaskExecutionSettings};
 use uuid::Uuid;
-
-mod notification;
 
 #[derive(Debug, Parser)]
 #[command(name = "12306-rs")]
@@ -63,7 +61,7 @@ enum Command {
         #[command(subcommand)]
         command: PassengerCommand,
     },
-    /// 创建和运行前台抢票任务
+    /// 创建、运行和管理抢票任务
     Task {
         #[command(subcommand)]
         command: TaskCommand,
@@ -84,6 +82,10 @@ struct ServeArgs {
     /// 监听端口
     #[arg(long, env = "RS12306_PORT", default_value_t = 12306)]
     port: u16,
+
+    /// 非本机监听时必填的 API Bearer token
+    #[arg(long, env = "RS12306_API_TOKEN", hide_env_values = true)]
+    api_token: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -115,10 +117,6 @@ struct LoginArgs {
     /// 二维码登录最长等待秒数
     #[arg(long, default_value_t = 600)]
     qr_timeout_seconds: u64,
-
-    /// 仅限本地开发：直接标记会话已验证
-    #[arg(long)]
-    verified: bool,
 }
 
 #[derive(Debug, Args)]
@@ -209,6 +207,13 @@ struct PassengerAddArgs {
 enum TaskCommand {
     /// 创建多日期、多席别抢票任务
     Create(Box<TaskCreateArgs>),
+    /// 完整替换尚未启动的任务配置
+    Edit {
+        /// 任务 UUID
+        task_id: String,
+        #[command(flatten)]
+        args: Box<TaskCreateArgs>,
+    },
     /// 查看所有任务
     List,
     /// 查看任务配置、状态和订单
@@ -236,8 +241,22 @@ enum TaskCommand {
         /// 任务 UUID
         task_id: String,
     },
+    /// 确认官方没有生成订单后，解除提交保护并恢复任务
+    Reconcile {
+        /// 任务 UUID
+        task_id: String,
+        /// 明确确认已在官方 12306 检查且没有对应订单
+        #[arg(long)]
+        confirmed_no_order: bool,
+    },
     /// 查看任务运行日志
     Logs {
+        /// 任务 UUID
+        task_id: String,
+    },
+    /// 内部后台任务 worker
+    #[command(name = "run-worker", hide = true)]
+    RunWorker {
         /// 任务 UUID
         task_id: String,
     },
@@ -336,6 +355,22 @@ struct TaskCreateArgs {
     #[arg(long, default_value_t = DEFAULT_QUERY_INTERVAL_MS)]
     query_interval_ms: u64,
 
+    /// 最早出发时间，例如 08:00
+    #[arg(long)]
+    depart_after: Option<NaiveTime>,
+
+    /// 最晚出发时间，例如 18:30；早于最早时间时表示跨午夜
+    #[arg(long)]
+    depart_before: Option<NaiveTime>,
+
+    /// 持久化任务启动时间，格式同 buy --at
+    #[arg(long)]
+    start_at: Option<String>,
+
+    /// 每位乘客的座位位置偏好，例如 A、F；可重复传入
+    #[arg(long = "seat-position")]
+    seat_position: Vec<String>,
+
     /// 任务备注
     #[arg(long)]
     remark: Option<String>,
@@ -358,6 +393,7 @@ async fn main() -> anyhow::Result<()> {
                 host: args.host,
                 port: args.port,
                 database_path: cli.database,
+                api_token: args.api_token,
             })
             .await?;
         }
@@ -386,10 +422,7 @@ async fn main() -> anyhow::Result<()> {
             if username.trim().is_empty() {
                 bail!("--username is required");
             }
-            if args.verified {
-                database.set_session_state("logged_in")?;
-                println!("session: logged_in");
-            } else if let Some(id_last4) = args.id_last4 {
+            if let Some(id_last4) = args.id_last4 {
                 if id_last4.trim().len() != 4 {
                     bail!("--id-last4 must be the last 4 characters of the bound ID card");
                 }
@@ -608,18 +641,49 @@ async fn handle_buy_command(database_path: PathBuf, args: BuyArgs) -> anyhow::Re
         .map(|value| normalize_choose_seats(value, seat, passenger_ids.len()))
         .transpose()?;
 
+    let tickets = query_12306_tickets(&args.from, &args.to, args.date)
+        .await
+        .map_err(anyhow::Error::msg)?;
     if let Some(at) = args.at.as_deref() {
         if !args.yes {
             bail!("scheduled real orders require --yes to confirm automatic submission");
         }
-        println!("prewarming query before scheduled submission...");
-        let _ = query_12306_tickets(&args.from, &args.to, args.date).await;
-        sleep_until(at).await?;
+        let scheduled_at = parse_schedule_at(at)?;
+        let ticket = tickets
+            .iter()
+            .find(|ticket| ticket.train_no.eq_ignore_ascii_case(&args.train))
+            .with_context(|| {
+                format!("train {} was not found for the selected route", args.train)
+            })?;
+        let task = build_buy_task(ticket, args.date, passenger_ids, seat)?;
+        let task_id = task.id.0.to_string();
+        database.save_task(&task)?;
+        database.save_task_execution_settings(
+            &task_id,
+            &TaskExecutionSettings {
+                start_at: Some(scheduled_at.with_timezone(&Utc).to_rfc3339()),
+                choose_seats,
+                ..TaskExecutionSettings::default()
+            },
+        )?;
+        database.update_task_status(&task_id, TaskStatus::Running)?;
+        database.append_task_log(
+            &task_id,
+            "info",
+            "scheduled_order_created",
+            &format!(
+                "scheduled order task will start at {}",
+                scheduled_at.format("%Y-%m-%d %H:%M:%S")
+            ),
+            None,
+        )?;
+        println!("task: {task_id}");
+        println!("scheduled_at: {}", scheduled_at.format("%Y-%m-%d %H:%M:%S"));
+        println!("status: running");
+        println!("the schedule is stored in SQLite and can be recovered by `12306-rs serve`");
+        return run_task(database, task_id).await;
     }
 
-    let tickets = query_12306_tickets(&args.from, &args.to, args.date)
-        .await
-        .map_err(anyhow::Error::msg)?;
     let ticket = tickets
         .into_iter()
         .find(|ticket| {
@@ -642,35 +706,17 @@ async fn handle_buy_command(database_path: PathBuf, args: BuyArgs) -> anyhow::Re
         return Ok(());
     }
 
-    let task = NewTicketTask {
-        from: Station {
-            name: ticket.from_name.clone(),
-            code: ticket.from_code.clone(),
-        },
-        to: Station {
-            name: ticket.to_name.clone(),
-            code: ticket.to_code.clone(),
-        },
-        dates: vec![args.date],
-        passengers: passenger_ids,
-        seat_preferences: vec![seat],
-        accept_no_seat: seat == SeatType::NoSeat,
-        train_filters: vec![TrainFilter {
-            kind: TrainFilterKind::Include,
-            train_no: ticket.train_no.clone(),
-        }],
-        enable_waitlist: false,
-        enable_strong_waitlist: false,
-        new_train_policy: NewTrainPolicy::Off,
-        new_trains_only: false,
-        query_interval_ms: Some(DEFAULT_QUERY_INTERVAL_MS),
-        remark: Some("created by cli buy".to_string()),
-    }
-    .build()
-    .context("invalid buy request")?;
+    let task = build_buy_task(&ticket, args.date, passenger_ids, seat)?;
 
     let task_id = task.id.0.to_string();
     database.save_task(&task)?;
+    database.save_task_execution_settings(
+        &task_id,
+        &TaskExecutionSettings {
+            choose_seats: choose_seats.clone(),
+            ..TaskExecutionSettings::default()
+        },
+    )?;
     database.update_task_status(&task_id, TaskStatus::Running)?;
     database.update_task_status(&task_id, TaskStatus::Querying)?;
     database.update_task_status(&task_id, TaskStatus::Submitting)?;
@@ -720,16 +766,6 @@ async fn handle_buy_command(database_path: PathBuf, args: BuyArgs) -> anyhow::Re
             return Err(error.into());
         }
     };
-    let message = order_success_message(
-        &ticket.from_name,
-        &ticket.to_name,
-        &ticket.train_no,
-        args.date,
-        seat,
-        passenger_count,
-        &order.order_no,
-    );
-    send_task_notification(&database, &task_id, &message).await;
     database.save_order(
         &task_id,
         &order.order_no,
@@ -748,6 +784,16 @@ async fn handle_buy_command(database_path: PathBuf, args: BuyArgs) -> anyhow::Re
         ),
         None,
     )?;
+    let message = order_success_message(
+        &ticket.from_name,
+        &ticket.to_name,
+        &ticket.train_no,
+        args.date,
+        seat,
+        passenger_count,
+        &order.order_no,
+    );
+    send_task_notification(&database, &task_id, &message).await;
 
     println!("task: {}", task.id);
     println!("train: {}", ticket.train_no);
@@ -758,6 +804,40 @@ async fn handle_buy_command(database_path: PathBuf, args: BuyArgs) -> anyhow::Re
         "payment: please open official 12306 and pay manually; automatic payment is not supported."
     );
     Ok(())
+}
+
+fn build_buy_task(
+    ticket: &rs12306_server::TicketQueryRow,
+    date: NaiveDate,
+    passenger_ids: Vec<PassengerId>,
+    seat: SeatType,
+) -> anyhow::Result<rs12306_core::TicketTask> {
+    NewTicketTask {
+        from: Station {
+            name: ticket.from_name.clone(),
+            code: ticket.from_code.clone(),
+        },
+        to: Station {
+            name: ticket.to_name.clone(),
+            code: ticket.to_code.clone(),
+        },
+        dates: vec![date],
+        passengers: passenger_ids,
+        seat_preferences: vec![seat],
+        accept_no_seat: seat == SeatType::NoSeat,
+        train_filters: vec![TrainFilter {
+            kind: TrainFilterKind::Include,
+            train_no: ticket.train_no.clone(),
+        }],
+        enable_waitlist: false,
+        enable_strong_waitlist: false,
+        new_train_policy: NewTrainPolicy::Off,
+        new_trains_only: false,
+        query_interval_ms: Some(DEFAULT_QUERY_INTERVAL_MS),
+        remark: Some("created by cli buy".to_string()),
+    }
+    .build()
+    .context("invalid buy request")
 }
 
 fn print_queue_update(update: &OrderQueueUpdate) {
@@ -935,6 +1015,7 @@ fn record_submit_failure(
             TaskStatus::WaitingLogin
         }
         RailwayClientError::VerificationRequired => TaskStatus::VerificationRequired,
+        RailwayClientError::SubmissionUnknown(_) => TaskStatus::ReconciliationRequired,
         _ => TaskStatus::Failed,
     };
     database.update_task_status(task_id, next_status)?;
@@ -1050,42 +1131,38 @@ async fn handle_task_command(database_path: PathBuf, command: TaskCommand) -> an
 
     match command {
         TaskCommand::Create(args) => {
-            let new_train_policy = parse_new_train_policy(&args.new_train_policy)?;
-            if args.passenger_id.is_empty()
-                && !(args.new_trains_only && new_train_policy == NewTrainPolicy::NotifyOnly)
-            {
-                bail!("at least one --passenger-id is required");
-            }
-            let passenger_ids: Vec<_> = args.passenger_id.into_iter().map(PassengerId).collect();
-            selected_passengers(&database, &passenger_ids)?;
-            let task = NewTicketTask {
-                from: Station {
-                    name: args.from_name,
-                    code: args.from_code,
-                },
-                to: Station {
-                    name: args.to_name,
-                    code: args.to_code,
-                },
-                dates: args.date,
-                passengers: passenger_ids,
-                seat_preferences: parse_seats(&args.seat)?,
-                accept_no_seat: args.accept_no_seat,
-                train_filters: parse_train_filters(args.include_train, args.exclude_train),
-                enable_waitlist: args.enable_waitlist,
-                enable_strong_waitlist: args.enable_strong_waitlist,
-                new_train_policy,
-                new_trains_only: args.new_trains_only,
-                query_interval_ms: Some(args.query_interval_ms),
-                remark: args.remark,
-            }
-            .build()
-            .context("invalid task configuration")?;
-
+            let (task, execution_settings) = build_task_from_args(&database, *args)?;
             database.save_task(&task)?;
+            database.save_task_execution_settings(&task.id.0.to_string(), &execution_settings)?;
             println!("created task: {}", task.id.0);
             println!("status: {}", task.status.as_str());
             println!("query_interval_ms: {}", task.query_interval_ms);
+            if let Some(start_at) = execution_settings.start_at {
+                println!("start_at: {start_at}");
+            }
+        }
+        TaskCommand::Edit { task_id, args } => {
+            let current = database.get_task_details(&task_id)?;
+            if current.status != TaskStatus::Created.as_str() {
+                bail!("only created tasks can be edited");
+            }
+            let (mut task, execution_settings) = build_task_from_args(&database, *args)?;
+            task.id = TaskId(Uuid::parse_str(&task_id).context("invalid task id")?);
+            task.status = TaskStatus::Created;
+            task.created_at = DateTime::parse_from_rfc3339(&current.created_at)
+                .context("invalid stored task created_at")?
+                .with_timezone(&Utc);
+            task.updated_at = Utc::now();
+            database.save_task(&task)?;
+            database.save_task_execution_settings(&task_id, &execution_settings)?;
+            database.append_task_log(
+                &task_id,
+                "info",
+                "task_updated",
+                "task configuration updated through CLI",
+                None,
+            )?;
+            println!("updated task: {task_id}");
         }
         TaskCommand::List => {
             let tasks = database.list_task_summaries()?;
@@ -1123,6 +1200,10 @@ async fn handle_task_command(database_path: PathBuf, command: TaskCommand) -> an
             println!("new_train_policy: {}", task.new_train_policy);
             println!("new_trains_only: {}", task.new_trains_only);
             println!("query_interval_ms: {}", task.query_interval_ms);
+            println!("depart_after: {}", task.depart_after.unwrap_or_default());
+            println!("depart_before: {}", task.depart_before.unwrap_or_default());
+            println!("start_at: {}", task.start_at.unwrap_or_default());
+            println!("choose_seats: {}", task.choose_seats.unwrap_or_default());
             println!("status: {}", task.status);
             println!("remark: {}", task.remark.unwrap_or_default());
             println!("created_at: {}", task.created_at);
@@ -1165,6 +1246,30 @@ async fn handle_task_command(database_path: PathBuf, command: TaskCommand) -> an
         TaskCommand::Cancel { task_id } => {
             update_task_status(&database, &task_id, TaskStatus::Cancelled)?
         }
+        TaskCommand::Reconcile {
+            task_id,
+            confirmed_no_order,
+        } => {
+            if !confirmed_no_order {
+                bail!(
+                    "check official 12306 first, then pass --confirmed-no-order to release submission protection"
+                );
+            }
+            let task = database.get_task_details(&task_id)?;
+            if task.status != TaskStatus::ReconciliationRequired.as_str() {
+                bail!("task is not waiting for submission reconciliation");
+            }
+            let released = database.release_task_train_actions(&task_id)?;
+            database.append_task_log(
+                &task_id,
+                "warn",
+                "submission_reconciled_no_order",
+                &format!("user confirmed no official order; released {released} submission claims"),
+                None,
+            )?;
+            update_task_status(&database, &task_id, TaskStatus::Running)?;
+            run_task(database.clone(), task_id).await?;
+        }
         TaskCommand::Logs { task_id } => {
             let logs = database.list_task_logs(&task_id)?;
             if logs.is_empty() {
@@ -1178,20 +1283,113 @@ async fn handle_task_command(database_path: PathBuf, command: TaskCommand) -> an
                 }
             }
         }
+        TaskCommand::RunWorker { task_id } => run_task(database.clone(), task_id).await?,
     }
 
     Ok(())
 }
 
+fn build_task_from_args(
+    database: &Database,
+    args: TaskCreateArgs,
+) -> anyhow::Result<(rs12306_core::TicketTask, TaskExecutionSettings)> {
+    let new_train_policy = parse_new_train_policy(&args.new_train_policy)?;
+    if args.passenger_id.is_empty()
+        && !(args.new_trains_only && new_train_policy == NewTrainPolicy::NotifyOnly)
+    {
+        bail!("at least one --passenger-id is required");
+    }
+    let passenger_ids: Vec<_> = args.passenger_id.into_iter().map(PassengerId).collect();
+    selected_passengers(database, &passenger_ids)?;
+    let seats = parse_seats(&args.seat)?;
+    let choose_seats = if args.seat_position.is_empty() {
+        None
+    } else {
+        let seat = seats
+            .iter()
+            .copied()
+            .find(|seat| {
+                matches!(
+                    seat,
+                    SeatType::Business | SeatType::FirstClass | SeatType::SecondClass
+                )
+            })
+            .context("--seat-position requires a business, first_class, or second_class seat")?;
+        let value = args
+            .seat_position
+            .iter()
+            .map(|position| {
+                let position = position.trim();
+                if position.chars().count() == 1 {
+                    format!("1{position}")
+                } else {
+                    position.to_string()
+                }
+            })
+            .collect::<String>();
+        Some(normalize_choose_seats(&value, seat, passenger_ids.len())?)
+    };
+    let start_at = args
+        .start_at
+        .as_deref()
+        .map(parse_schedule_at)
+        .transpose()?
+        .map(|value| value.with_timezone(&Utc).to_rfc3339());
+    let execution_settings = TaskExecutionSettings {
+        depart_after: args
+            .depart_after
+            .map(|value| value.format("%H:%M").to_string()),
+        depart_before: args
+            .depart_before
+            .map(|value| value.format("%H:%M").to_string()),
+        start_at,
+        choose_seats,
+    };
+    let task = NewTicketTask {
+        from: Station {
+            name: args.from_name,
+            code: args.from_code,
+        },
+        to: Station {
+            name: args.to_name,
+            code: args.to_code,
+        },
+        dates: args.date,
+        passengers: passenger_ids,
+        seat_preferences: seats,
+        accept_no_seat: args.accept_no_seat,
+        train_filters: parse_train_filters(args.include_train, args.exclude_train),
+        enable_waitlist: args.enable_waitlist,
+        enable_strong_waitlist: args.enable_strong_waitlist,
+        new_train_policy,
+        new_trains_only: args.new_trains_only,
+        query_interval_ms: Some(args.query_interval_ms),
+        remark: args.remark,
+    }
+    .build()
+    .context("invalid task configuration")?;
+    Ok((task, execution_settings))
+}
+
 async fn run_task(database: Database, task_id: String) -> anyhow::Result<()> {
+    let mut consecutive_query_failures = 0_u32;
+    let mut validated_session_cookie: Option<String> = None;
     loop {
         let task = database.get_task_details(&task_id)?;
+        if task.status == TaskStatus::Running.as_str()
+            && let Some(wait) = task_start_wait(&task)?
+        {
+            let sleep = wait.min(Duration::from_secs(5));
+            println!("task: {task_id} scheduled; starting in {}s", wait.as_secs());
+            tokio::time::sleep(sleep).await;
+            continue;
+        }
         match task.status.as_str() {
             "running" => {
                 database.update_task_status(&task_id, TaskStatus::Querying)?;
             }
             "querying" => {}
-            "paused" | "cancelled" | "failed" | "pending_payment" => {
+            "paused" | "cancelled" | "failed" | "pending_payment" | "reconciliation_required" => {
                 println!("task: {task_id}");
                 println!("status: {}", task.status);
                 return Ok(());
@@ -1208,11 +1406,36 @@ async fn run_task(database: Database, task_id: String) -> anyhow::Result<()> {
                 database.update_task_status(&task_id, TaskStatus::WaitingLogin)?;
                 bail!("login required; run `12306-rs login --qr` first");
             }
-            Some(
-                database
-                    .session_cookies()?
-                    .context("login cookies missing; run `12306-rs login --qr` again")?,
-            )
+            let cookies = database
+                .session_cookies()?
+                .context("login cookies missing; run `12306-rs login --qr` again")?;
+            if validated_session_cookie.as_deref() != Some(cookies.as_str()) {
+                match list_12306_passengers(&cookies).await {
+                    Ok(_) => validated_session_cookie = Some(cookies.clone()),
+                    Err(RailwayClientError::SessionExpired) => {
+                        database.set_session_state("expired")?;
+                        database.update_task_status(&task_id, TaskStatus::WaitingLogin)?;
+                        database.append_task_log(
+                            &task_id,
+                            "warn",
+                            "session_expired",
+                            "12306 session expired; login again before resuming",
+                            None,
+                        )?;
+                        bail!("12306 session expired; run `12306-rs login --qr` again");
+                    }
+                    Err(error) => {
+                        database.append_task_log(
+                            &task_id,
+                            "warn",
+                            "session_check_unavailable",
+                            &error.to_string(),
+                            None,
+                        )?;
+                    }
+                }
+            }
+            Some(cookies)
         };
         let passenger_ids = task
             .passenger_ids
@@ -1228,15 +1451,16 @@ async fn run_task(database: Database, task_id: String) -> anyhow::Result<()> {
         let snapshots = match query_task_snapshots(&database, &task, &seats).await {
             Ok(snapshots) => snapshots,
             Err(error) => {
+                consecutive_query_failures = consecutive_query_failures.saturating_add(1);
+                let retry_delay =
+                    query_retry_delay(task.query_interval_ms, consecutive_query_failures);
                 database.append_task_log(&task_id, "warn", "ticket_query_failed", &error, None)?;
-                println!(
-                    "query failed: {error}; retrying in {}ms",
-                    task.query_interval_ms
-                );
-                tokio::time::sleep(Duration::from_millis(task.query_interval_ms)).await;
+                println!("query failed: {error}; retrying in {retry_delay}ms");
+                tokio::time::sleep(Duration::from_millis(retry_delay)).await;
                 continue;
             }
         };
+        consecutive_query_failures = 0;
 
         if monitor_only {
             println!(
@@ -1301,6 +1525,15 @@ async fn run_task(database: Database, task_id: String) -> anyhow::Result<()> {
                                 return Err(error.into());
                             }
                         };
+                        database.save_standby_order(&task_id, waitlist.standby_no.as_deref())?;
+                        database.update_task_status(&task_id, TaskStatus::CandidateSubmitted)?;
+                        database.append_task_log(
+                            &task_id,
+                            "info",
+                            "waitlist_submitted",
+                            "waitlist submitted; check official 12306 for confirmation or payment",
+                            None,
+                        )?;
                         let message = waitlist_success_message(
                             &ticket.from_name,
                             &ticket.to_name,
@@ -1311,15 +1544,6 @@ async fn run_task(database: Database, task_id: String) -> anyhow::Result<()> {
                             waitlist.standby_no.as_deref(),
                         );
                         send_task_notification(&database, &task_id, &message).await;
-                        database.save_standby_order(&task_id, waitlist.standby_no.as_deref())?;
-                        database.update_task_status(&task_id, TaskStatus::CandidateSubmitted)?;
-                        database.append_task_log(
-                            &task_id,
-                            "info",
-                            "waitlist_submitted",
-                            "waitlist submitted; check official 12306 for confirmation or payment",
-                            None,
-                        )?;
                         println!("task: {task_id}");
                         if let Some(standby_no) = waitlist.standby_no {
                             println!("standby_order: {standby_no}");
@@ -1378,7 +1602,7 @@ async fn run_task(database: Database, task_id: String) -> anyhow::Result<()> {
                 seat_type: seat,
                 passenger_names,
                 passenger_id_masks,
-                choose_seats: None,
+                choose_seats: task_choose_seats(&task, seat, passenger_ids.len())?,
             },
             move |update| {
                 print_queue_update(&update);
@@ -1411,16 +1635,6 @@ async fn run_task(database: Database, task_id: String) -> anyhow::Result<()> {
                 return Err(error.into());
             }
         };
-        let message = order_success_message(
-            &ticket.from_name,
-            &ticket.to_name,
-            &ticket.train_no,
-            date,
-            seat,
-            passenger_ids.len(),
-            &order.order_no,
-        );
-        send_task_notification(&database, &task_id, &message).await;
         database.save_order(
             &task_id,
             &order.order_no,
@@ -1439,6 +1653,16 @@ async fn run_task(database: Database, task_id: String) -> anyhow::Result<()> {
             ),
             None,
         )?;
+        let message = order_success_message(
+            &ticket.from_name,
+            &ticket.to_name,
+            &ticket.train_no,
+            date,
+            seat,
+            passenger_ids.len(),
+            &order.order_no,
+        );
+        send_task_notification(&database, &task_id, &message).await;
         println!("task: {task_id}");
         println!("order: {}", order.order_no);
         println!("status: pending_payment");
@@ -1465,6 +1689,12 @@ async fn query_task_snapshots(
     for date in &task.dates {
         let date =
             NaiveDate::parse_from_str(date, "%Y-%m-%d").map_err(|error| error.to_string())?;
+        let wait_ms = database
+            .reserve_request_slot("ticket_query", 500)
+            .map_err(|error| error.to_string())?;
+        if wait_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(wait_ms)).await;
+        }
         let tickets = match query_12306_tickets(&task.from_code, &task.to_code, date).await {
             Ok(tickets) => tickets,
             Err(error) => {
@@ -1572,6 +1802,11 @@ async fn query_task_snapshots(
     }
 }
 
+fn query_retry_delay(base_ms: u64, consecutive_failures: u32) -> u64 {
+    let exponent = consecutive_failures.saturating_sub(1).min(4);
+    base_ms.saturating_mul(1_u64 << exponent).min(60_000)
+}
+
 fn select_task_ticket(
     task: &rs12306_storage::TaskDetails,
     seats: &[SeatType],
@@ -1584,6 +1819,7 @@ fn select_task_ticket(
                     && task_train_action_allowed(task, snapshot, ticket)
                     && ticket.can_web_buy
                     && !ticket.secret_str.is_empty()
+                    && task_seat_choice_supported(task, *seat, task.passenger_ids.len())
                     && seat_inventory(ticket, *seat)
                         .is_some_and(|value| inventory_available(value, task.passenger_ids.len()))
             }) {
@@ -1699,15 +1935,61 @@ fn task_ticket_matches(
     task: &rs12306_storage::TaskDetails,
     ticket: &rs12306_server::TicketQueryRow,
 ) -> bool {
-    (task.train_include.is_empty()
-        || task
-            .train_include
-            .iter()
-            .any(|train| ticket.train_no.eq_ignore_ascii_case(train)))
+    time_matches_task(task, &ticket.depart_time)
+        && (task.train_include.is_empty()
+            || task
+                .train_include
+                .iter()
+                .any(|train| ticket.train_no.eq_ignore_ascii_case(train)))
         && !task
             .train_exclude
             .iter()
             .any(|train| ticket.train_no.eq_ignore_ascii_case(train))
+}
+
+fn time_matches_task(task: &rs12306_storage::TaskDetails, depart_time: &str) -> bool {
+    let after = task.depart_after.as_deref();
+    let before = task.depart_before.as_deref();
+    match (after, before) {
+        (Some(after), Some(before)) if after > before => {
+            depart_time >= after || depart_time <= before
+        }
+        (Some(after), Some(before)) => depart_time >= after && depart_time <= before,
+        (Some(after), None) => depart_time >= after,
+        (None, Some(before)) => depart_time <= before,
+        (None, None) => true,
+    }
+}
+
+fn task_seat_choice_supported(
+    task: &rs12306_storage::TaskDetails,
+    seat: SeatType,
+    passenger_count: usize,
+) -> bool {
+    task.choose_seats
+        .as_deref()
+        .is_none_or(|value| normalize_choose_seats(value, seat, passenger_count).is_ok())
+}
+
+fn task_choose_seats(
+    task: &rs12306_storage::TaskDetails,
+    seat: SeatType,
+    passenger_count: usize,
+) -> anyhow::Result<Option<String>> {
+    task.choose_seats
+        .as_deref()
+        .map(|value| normalize_choose_seats(value, seat, passenger_count))
+        .transpose()
+}
+
+fn task_start_wait(task: &rs12306_storage::TaskDetails) -> anyhow::Result<Option<Duration>> {
+    let Some(value) = task.start_at.as_deref() else {
+        return Ok(None);
+    };
+    let target = DateTime::parse_from_rfc3339(value)
+        .with_context(|| format!("invalid stored task start time: {value}"))?
+        .with_timezone(&Utc);
+    Ok(target.signed_duration_since(Utc::now()).to_std().ok())
 }
 
 fn record_waitlist_failure(
@@ -1721,6 +2003,7 @@ fn record_waitlist_failure(
             TaskStatus::WaitingLogin
         }
         RailwayClientError::VerificationRequired => TaskStatus::VerificationRequired,
+        RailwayClientError::SubmissionUnknown(_) => TaskStatus::ReconciliationRequired,
         _ => TaskStatus::Failed,
     };
     database.update_task_status(task_id, next_status)?;
@@ -1765,21 +2048,6 @@ fn inventory_available(value: &str, passenger_count: usize) -> bool {
             .trim()
             .parse::<usize>()
             .is_ok_and(|count| count >= passenger_count)
-}
-
-async fn sleep_until(value: &str) -> anyhow::Result<()> {
-    let target = parse_schedule_at(value)?;
-    let now = Local::now();
-    if target > now {
-        let wait = target
-            .signed_duration_since(now)
-            .to_std()
-            .context("invalid scheduled time")?;
-        println!("scheduled_at: {}", target.format("%Y-%m-%d %H:%M:%S"));
-        println!("waiting_seconds: {}", wait.as_secs());
-        tokio::time::sleep(wait).await;
-    }
-    Ok(())
 }
 
 fn parse_schedule_at(value: &str) -> anyhow::Result<DateTime<Local>> {
@@ -2019,6 +2287,10 @@ mod tests {
             seat_types: vec!["second_class".to_string()],
             train_include: Vec::new(),
             train_exclude: Vec::new(),
+            depart_after: None,
+            depart_before: None,
+            start_at: None,
+            choose_seats: None,
         }
     }
 
@@ -2064,6 +2336,28 @@ mod tests {
     fn parses_absolute_schedule_time() {
         assert!(parse_schedule_at("2026-07-08 14:30:00").is_ok());
         assert!(parse_schedule_at("bad").is_err());
+    }
+
+    #[test]
+    fn applies_bounded_exponential_query_backoff() {
+        assert_eq!(query_retry_delay(3_000, 1), 3_000);
+        assert_eq!(query_retry_delay(3_000, 3), 12_000);
+        assert_eq!(query_retry_delay(5_000, 10), 60_000);
+    }
+
+    #[test]
+    fn filters_departure_time_ranges_including_midnight() {
+        let mut task = task_details(NewTrainPolicy::Off, false);
+        task.depart_after = Some("08:00".to_string());
+        task.depart_before = Some("10:00".to_string());
+        assert!(time_matches_task(&task, "09:00"));
+        assert!(!time_matches_task(&task, "11:00"));
+
+        task.depart_after = Some("22:00".to_string());
+        task.depart_before = Some("02:00".to_string());
+        assert!(time_matches_task(&task, "23:30"));
+        assert!(time_matches_task(&task, "01:00"));
+        assert!(!time_matches_task(&task, "12:00"));
     }
 
     #[test]

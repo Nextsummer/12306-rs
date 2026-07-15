@@ -149,6 +149,7 @@ pub enum TaskStatus {
     CandidateSubmitting,
     CandidateSubmitted,
     CandidatePendingPayment,
+    ReconciliationRequired,
     Failed,
     Cancelled,
 }
@@ -167,6 +168,7 @@ impl TaskStatus {
             Self::CandidateSubmitting => "candidate_submitting",
             Self::CandidateSubmitted => "candidate_submitted",
             Self::CandidatePendingPayment => "candidate_pending_payment",
+            Self::ReconciliationRequired => "reconciliation_required",
             Self::Failed => "failed",
             Self::Cancelled => "cancelled",
         }
@@ -181,6 +183,7 @@ impl TaskStatus {
                 | (Created, Cancelled)
                 | (Running, Querying)
                 | (Running, Paused)
+                | (Running, Failed)
                 | (Running, Cancelled)
                 | (Querying, Submitting)
                 | (Querying, CandidateSubmitting)
@@ -200,16 +203,20 @@ impl TaskStatus {
                 | (Submitting, PendingPayment)
                 | (Submitting, WaitingLogin)
                 | (Submitting, VerificationRequired)
+                | (Submitting, ReconciliationRequired)
                 | (Submitting, Failed)
                 | (CandidateSubmitting, CandidateSubmitted)
                 | (CandidateSubmitting, Querying)
                 | (CandidateSubmitting, WaitingLogin)
                 | (CandidateSubmitting, VerificationRequired)
+                | (CandidateSubmitting, ReconciliationRequired)
                 | (CandidateSubmitting, Failed)
                 | (CandidateSubmitted, CandidatePendingPayment)
                 | (CandidateSubmitted, Cancelled)
                 | (PendingPayment, Cancelled)
                 | (CandidatePendingPayment, Cancelled)
+                | (ReconciliationRequired, Running)
+                | (ReconciliationRequired, Cancelled)
         )
     }
 }
@@ -230,6 +237,7 @@ impl FromStr for TaskStatus {
             "candidate_submitting" => Ok(Self::CandidateSubmitting),
             "candidate_submitted" => Ok(Self::CandidateSubmitted),
             "candidate_pending_payment" => Ok(Self::CandidatePendingPayment),
+            "reconciliation_required" => Ok(Self::ReconciliationRequired),
             "failed" => Ok(Self::Failed),
             "cancelled" => Ok(Self::Cancelled),
             _ => Err(ParseDomainValueError {
@@ -568,5 +576,17 @@ mod tests {
         assert!(
             TaskStatus::CandidateSubmitted.can_transition_to(TaskStatus::CandidatePendingPayment)
         );
+    }
+
+    #[test]
+    fn unknown_submission_requires_reconciliation_before_running() {
+        assert!(TaskStatus::Submitting.can_transition_to(TaskStatus::ReconciliationRequired));
+        assert!(TaskStatus::ReconciliationRequired.can_transition_to(TaskStatus::Running));
+        assert!(!TaskStatus::ReconciliationRequired.can_transition_to(TaskStatus::Querying));
+    }
+
+    #[test]
+    fn running_task_can_fail_when_worker_cannot_start() {
+        assert!(TaskStatus::Running.can_transition_to(TaskStatus::Failed));
     }
 }

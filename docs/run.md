@@ -94,15 +94,17 @@ cargo run -p rs12306-cli -- buy \
   --passenger-id 00000000-0000-4000-8000-000000000001
 ```
 
-推荐使用 `login --qr` 进行官方二维码登录，命令会在终端显示二维码，并在当前目录保存 `12306-login-qr.png` 作为兜底；二维码过期会自动刷新，默认最多等待 600 秒。使用 12306 App 扫码确认后会把会话保存到 SQLite。账号密码登录默认使用隐藏式密码输入，也可以通过 `RS12306_PASSWORD` 提供密码；不建议把密码直接写入命令行。若 12306 要求验证码、滑块或其他核验，命令会进入 `verification_required`；此时请改用 `login --qr`。`login --verified` 仅保留给本地开发调试。
+推荐使用 `login --qr` 进行官方二维码登录，命令会在终端显示二维码，并在当前目录保存 `12306-login-qr.png` 作为兜底；二维码过期会自动刷新，默认最多等待 600 秒。使用 12306 App 扫码确认后会把会话保存到 SQLite。账号密码登录默认使用隐藏式密码输入，也可以通过 `RS12306_PASSWORD` 提供密码；不建议把密码直接写入命令行。若 12306 要求验证码、滑块或其他核验，命令会进入 `verification_required`；此时请改用 `login --qr`。
 如果 12306 要求短信验证，可以先用 `login --username <账号> --id-last4 <证件后4位>` 获取短信验证码，再用 `login --username <账号> --sms-code <验证码>` 完成登录，密码会隐藏输入。
 
 真实下单前需要先添加本地乘客，`--name` 必须和 12306 常用联系人姓名一致；完整证件号和手机号会在下单时从 12306 常用联系人接口读取，本地只保存脱敏证件号用于展示。
 可以用 `passenger 12306-list` 查看当前登录账号的 12306 常用联系人列表；命令会把联系人同步到本地并显示可直接用于 `--passenger-id` 的 UUID，证件号和手机号仍保持脱敏。
 高铁/动车可用 `--choose-seats` 传座位位置偏好，例如 `1A`、`1F`、多人 `1A1F`；A/F 通常是靠窗，C/D 通常是过道，B 是中间位。卧铺上中下铺暂不接，避免传错 12306 铺别参数导致下单异常。
-`buy` 必须明确指定 `--train`，即时下单会在提交真实订单前展示车次、日期、席别和乘客并请求确认；使用 `--yes` 可跳过确认。定时下单可用 `--at`，支持 `2026-07-09 14:30:00`、`2026-07-09T14:30:00`、`14:30:00`、`14:30`，定时自动提交必须同时传 `--yes`。命令会提前预热一次查询，但仍是本机前台等待，终端进程退出后定时失效。
+`buy` 必须明确指定 `--train`，即时下单会在提交真实订单前展示车次、日期、席别和乘客并请求确认；使用 `--yes` 可跳过确认。定时下单可用 `--at`，支持 `2026-07-09 14:30:00`、`2026-07-09T14:30:00`、`14:30:00`、`14:30`，定时自动提交必须同时传 `--yes`。定时任务会先保存到 SQLite；当前进程中断后，启动 `serve` 可恢复运行中的任务。
 普通订单排队时会每 3 秒打印 `queue: wait_time=...s wait_count=...`，避免定时放票高峰看起来像卡死。
-`task start <任务ID>` 和 `task resume <任务ID>` 会在前台持续查询并在命中后提交普通订单；可从另一个终端执行 `task pause` 或 `task cancel`。多个任务可分别由多个 CLI 进程运行。任务同时开启候补和强候补后，无符合条件余票但存在匹配候补机会时，会优先提交候补并停止继续刷票；候补提交后请前往 12306 官方渠道检查确认或支付状态。
+`task start <任务ID>` 和 `task resume <任务ID>` 会在前台持续查询并在命中后提交普通订单；Web UI/API 启动的任务由 `serve` 管理后台 worker，服务重启会恢复 `running` 和 `querying` 状态。可从另一个终端执行 `task pause` 或 `task cancel`。任务支持 `--start-at`、出发时间范围和可重复的 `--seat-position`；座位位置数量必须和乘客数量一致。任务同时开启候补和强候补后，无符合条件余票但存在匹配候补机会时，会优先提交候补并停止继续刷票；候补提交后请前往 12306 官方渠道检查确认或支付状态。
+
+普通订单或候补提交超时后，结果不能安全判断，任务会进入 `reconciliation_required`。先到官方 12306 核对；确认没有对应订单后，运行 `task reconcile <任务ID> --confirmed-no-order` 才会解除去重保护并恢复查询。
 
 新增车次监控通过任务参数启用：`--new-train-policy notify_only` 只通知新增车次，`--new-train-policy auto_order` 允许符合原任务条件的新增车次进入下单和候补流程。增加 `--new-trains-only` 后任务首次查询按日期建立基线，之后只处理新增车次；独立 `notify_only` 任务不要求乘客或 12306 登录。查询间隔仍由 `--query-interval-ms` 控制并执行最小间隔限制。
 
@@ -124,15 +126,17 @@ target/release/12306-rs notify remove feishu
 
 ```bash
 docker build -t 12306-rs .
-docker run --rm -p 12306:12306 -v 12306-rs-data:/data 12306-rs
+docker run --rm -p 127.0.0.1:12306:12306 \
+  -e RS12306_API_TOKEN='<至少16位随机字符串>' \
+  -v 12306-rs-data:/data 12306-rs
 ```
 
-容器默认使用 `/data/12306-rs.sqlite` 保存 SQLite 数据，监听 `0.0.0.0:12306`。
+容器默认使用 `/data/12306-rs.sqlite` 保存 SQLite 数据，监听 `0.0.0.0:12306`，因此必须提供至少 16 位的 API token。远程 Web UI 请求会读取浏览器 `localStorage` 中的 `rs12306_api_token` 并作为 Bearer token 发送。
 
 也可以快速部署：
 
 ```bash
-make docker-deploy PORT=12306
+make docker-deploy PORT=12306 API_TOKEN='<至少16位随机字符串>'
 make docker-logs
 make docker-stop
 ```

@@ -25,6 +25,7 @@ DATABASE ?= ./data/12306-rs.sqlite
 IMAGE ?= $(APP):latest
 CONTAINER ?= $(APP)
 DOCKER_DATA ?= $(APP)-data
+API_TOKEN ?=
 
 .DEFAULT_GOAL := help
 
@@ -52,7 +53,7 @@ help:
 		'  make docker-logs    跟踪 Docker 日志' \
 		'  make clean          清理 Cargo 和 dist 产物' \
 		'' \
-		'可覆盖变量: HOST PORT DATABASE IMAGE CONTAINER DOCKER_DATA LINUX_ARCH'
+		'可覆盖变量: HOST PORT DATABASE IMAGE CONTAINER DOCKER_DATA API_TOKEN LINUX_ARCH'
 
 all: check test package
 
@@ -119,11 +120,13 @@ docker-build:
 	docker build -t '$(IMAGE)' .
 
 docker-deploy: docker-build
+	@test -n '$(API_TOKEN)' || { printf '%s\n' '请设置 API_TOKEN（至少 16 个字符）'; exit 1; }
 	@docker rm -f '$(CONTAINER)' >/dev/null 2>&1 || true
 	docker run -d \
 		--name '$(CONTAINER)' \
 		--restart unless-stopped \
-		-p '$(PORT):12306' \
+		-p '127.0.0.1:$(PORT):12306' \
+		-e RS12306_API_TOKEN='$(API_TOKEN)' \
 		-v '$(DOCKER_DATA):/data' \
 		'$(IMAGE)'
 	@printf 'Docker 服务已启动: http://127.0.0.1:%s\n' '$(PORT)'
