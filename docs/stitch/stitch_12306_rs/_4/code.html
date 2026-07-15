@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="zh-CN" style=""><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>12306-rs - 任务列表</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Config -->
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-variant": "#1a2438",
+                    "on-surface": "#e0e8f0",
+                    "on-primary-fixed-variant": "#004d73",
+                    "tertiary": "#c8a0f0",
+                    "on-secondary-fixed": "#0d1f2b",
+                    "surface-dim": "#0f1524",
+                    "surface-container-lowest": "#0a0e1a",
+                    "primary-container": "#0e4d6e",
+                    "inverse-surface": "#e0e8f0",
+                    "error": "#ff6b6b",
+                    "outline-variant": "#2a3a48",
+                    "surface-container-high": "#1a2438",
+                    "on-primary-fixed": "#001f2e",
+                    "on-tertiary-fixed-variant": "#4d2a73",
+                    "surface-bright": "#1a2438",
+                    "on-surface-variant": "#a0b4c4",
+                    "on-background": "#e0e8f0",
+                    "inverse-primary": "#0a4c6e",
+                    "on-error": "#1a0000",
+                    "primary-fixed": "#c8eaff",
+                    "on-secondary-container": "#c0d8e8",
+                    "on-primary-container": "#c8eaff",
+                    "on-error-container": "#ffb3b3",
+                    "surface": "#0f1524",
+                    "secondary-fixed": "#c0d8e8",
+                    "tertiary-fixed": "#e8d0ff",
+                    "primary": "#7dd3fc",
+                    "on-secondary": "#001f2e",
+                    "inverse-on-surface": "#0a0e1a",
+                    "secondary-container": "#1a3a4e",
+                    "surface-container-highest": "#202c42",
+                    "on-tertiary-fixed": "#1a002e",
+                    "secondary": "#88b4cc",
+                    "outline": "#4a6070",
+                    "on-tertiary-container": "#e8d0ff",
+                    "tertiary-container": "#3d2060",
+                    "surface-tint": "#7dd3fc",
+                    "on-secondary-fixed-variant": "#2a4a5e",
+                    "surface-container-low": "#111828",
+                    "background": "#0a0e1a",
+                    "secondary-fixed-dim": "#88b4cc",
+                    "tertiary-fixed-dim": "#c8a0f0",
+                    "primary-fixed-dim": "#7dd3fc",
+                    "on-tertiary": "#1a002e",
+                    "on-primary": "#001f2e",
+                    "error-container": "#3d1414",
+                    "surface-container": "#141c2e"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.5rem",
+                    "lg": "1rem",
+                    "xl": "1.5rem",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Inter", "sans-serif"],
+                    "display": ["Inter", "sans-serif"],
+                    "body": ["Inter", "sans-serif"],
+                    "label": ["Inter", "sans-serif"]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .glass-card {
+            background: rgba(15, 21, 36, 0.6);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(125, 211, 252, 0.1);
+        }
+        .glass-elevated {
+            background: rgba(15, 21, 36, 0.75);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(125, 211, 252, 0.15);
+            box-shadow: 0 0 30px rgba(125, 211, 252, 0.05);
+        }
+        
+        /* Custom scrollbar for data dense tables */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(10, 14, 26, 0.5);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(125, 211, 252, 0.2);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(125, 211, 252, 0.4);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface min-h-screen overflow-hidden flex font-body">
+<!-- Global Background Elements -->
+<div class="fixed inset-0 z-[-1] pointer-events-none">
+<div class="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-primary/5 rounded-full blur-[120px]"></div>
+<div class="absolute bottom-[-20%] right-[-10%] w-[40%] h-[40%] bg-tertiary/5 rounded-full blur-[100px]"></div>
+</div>
+<!-- SideNavBar -->
+<nav class="fixed left-0 top-0 h-full flex flex-col w-64 bg-surface/60 backdrop-blur-xl border-r border-primary/10 shadow-[0_0_30px_rgba(125,211,252,0.05)] z-50">
+<!-- Brand Header -->
+<div class="px-6 py-8 flex items-center gap-4 border-b border-primary/5">
+<div class="w-10 h-10 rounded-lg glass-elevated flex items-center justify-center text-primary">
+<span class="material-symbols-outlined" data-icon="train">train</span>
+</div>
+<div>
+<h1 class="text-xl font-headline font-semibold tracking-tight text-primary">12306-rs</h1>
+<p class="text-xs text-on-surface-variant mt-1">Rust 后台管理</p>
+</div>
+</div>
+<!-- Navigation Links -->
+<div class="flex-1 overflow-y-auto py-6 px-3 flex flex-col gap-2">
+<!-- Inactive: 控制面板 -->
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-primary/5 hover:text-on-surface transition-colors active:scale-95 transition-transform group" href="#">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors" data-icon="dashboard">dashboard</span>
+<span class="font-medium text-sm">控制面板</span>
+</a>
+<!-- Inactive: 车票查询 -->
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-primary/5 hover:text-on-surface transition-colors active:scale-95 transition-transform group" href="#">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors" data-icon="search">search</span>
+<span class="font-medium text-sm">车票查询</span>
+</a>
+<!-- Active: 任务列表 -->
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-primary bg-primary/10 border-r-2 border-primary shadow-[inset_0_0_20px_rgba(125,211,252,0.05)] active:scale-95 transition-transform" href="#">
+<span class="material-symbols-outlined text-primary" data-icon="assignment" data-weight="fill" style="font-variation-settings: 'FILL' 1;">assignment</span>
+<span class="font-semibold text-sm">任务列表</span>
+</a>
+<!-- Inactive: 系统设置 -->
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-primary/5 hover:text-on-surface transition-colors active:scale-95 transition-transform group" href="#">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors" data-icon="settings">settings</span>
+<span class="font-medium text-sm">系统设置</span>
+</a>
+</div>
+<!-- User Profile Anchor (Bottom) -->
+<div class="p-4 border-t border-primary/10">
+<div class="flex items-center gap-3 px-2 py-2">
+<img alt="User Avatar" class="w-8 h-8 rounded-full object-cover ring-2 ring-primary/20" data-alt="A macro photography shot of a sleek, dark abstract geometric sphere with luminous blue edge lighting, minimalist, high tech, premium look." src="https://lh3.googleusercontent.com/aida-public/AB6AXuApwYQ5C4yTO7r0eHSK7EVd2Tm1FfbCs4DC-WzORqnQ3nta5HZsRDCaqX3BIVz60X1HZMhZkhVf7I2JuAnuTHmEbqJcXtFVwnzGuwUF4HMCcYeXP4FzCtQ1lMZiymE-qH8LzZRQv8qJNlxbF-xbiJ3NZOz-Dy63y0rBigFclIukAa8bhHZ1mTvYgPO0XmU9kfjMpGYsKUDVtrCV3CECwsGLVn-CE9XTMvHBAWGpMZocQkjOMA8RH1nHLgBYA4btxWYpoTc0bnyDc-Fa"/>
+<div class="flex flex-col">
+<span class="text-sm font-medium text-on-surface">Admin User</span>
+<span class="text-xs text-on-surface-variant">Active Session</span>
+</div>
+</div>
+</div>
+</nav>
+<!-- TopAppBar -->
+<header class="fixed top-0 right-0 left-64 h-16 flex items-center justify-between px-6 z-40 bg-surface-variant/75 backdrop-blur-2xl border-b border-primary/10 shadow-sm">
+<div class="flex-1 flex items-center">
+<!-- Search Bar injected in right position as per JSON, but we can put a subtle page context here -->
+<span class="text-on-surface-variant text-sm font-medium flex items-center gap-2">
+<span class="material-symbols-outlined text-lg" data-icon="dns">dns</span>
+                Node Cluster Alpha
+            </span>
+</div>
+<!-- Trailing Actions -->
+<div class="flex items-center gap-4">
+<button class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors scale-100 hover:scale-105">
+<span class="material-symbols-outlined text-xl" data-icon="search">search</span>
+</button>
+<button class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors scale-100 hover:scale-105 relative">
+<span class="material-symbols-outlined text-xl" data-icon="notifications">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full shadow-[0_0_8px_rgba(125,211,252,0.8)]"></span>
+</button>
+<div class="w-px h-6 bg-primary/20 mx-1"></div>
+<button class="w-10 h-10 rounded-full flex items-center justify-center text-error hover:bg-error/10 transition-colors scale-100 hover:scale-105">
+<span class="material-symbols-outlined text-xl" data-icon="power_settings_new">power_settings_new</span>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-64 mt-16 p-8 w-full h-[calc(100vh-4rem)] overflow-y-auto relative z-10">
+<!-- Page Header -->
+<div class="flex items-end justify-between mb-8">
+<div>
+<h2 class="text-3xl font-headline font-bold text-on-surface tracking-tight flex items-center gap-3">
+                    任务监控
+                    <span class="px-2.5 py-0.5 rounded-full glass-card text-xs font-medium text-primary border-primary/30">Active: 12</span>
+</h2>
+<p class="text-on-surface-variant mt-2 text-sm">管理并监控自动购票任务的执行状态。</p>
+</div>
+<div class="flex gap-3">
+<button class="glass-card px-4 py-2 rounded-lg text-sm font-medium text-on-surface hover:bg-surface-variant transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]" data-icon="filter_list">filter_list</span>
+                    筛选
+                </button>
+<button class="bg-primary/10 border border-primary/30 px-4 py-2 rounded-lg text-sm font-medium text-primary hover:bg-primary/20 transition-colors flex items-center gap-2 shadow-[0_0_15px_rgba(125,211,252,0.1)]">
+<span class="material-symbols-outlined text-[18px]" data-icon="add">add</span>
+                    新建任务
+                </button>
+</div>
+</div>
+<!-- Data Dense Table Card -->
+<div class="glass-elevated rounded-xl overflow-hidden flex flex-col h-[calc(100%-6rem)]">
+<!-- Table Header -->
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse whitespace-nowrap">
+<thead>
+<tr class="border-b border-primary/20 bg-surface-variant/40">
+<th class="px-6 py-4 text-xs font-semibold text-on-surface-variant uppercase tracking-wider w-24">任务 ID</th>
+<th class="px-6 py-4 text-xs font-semibold text-on-surface-variant uppercase tracking-wider">路线信息</th>
+<th class="px-6 py-4 text-xs font-semibold text-on-surface-variant uppercase tracking-wider w-40">日期</th>
+<th class="px-6 py-4 text-xs font-semibold text-on-surface-variant uppercase tracking-wider">乘车人</th>
+<th class="px-6 py-4 text-xs font-semibold text-on-surface-variant uppercase tracking-wider w-36">状态</th>
+<th class="px-6 py-4 text-xs font-semibold text-on-surface-variant uppercase tracking-wider text-right w-64">操作</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-primary/5 font-body text-sm"><tr class="hover:bg-surface-variant/30 transition-colors group"><td class="px-6 py-4 text-on-surface font-mono text-xs">#TK-8930</td><td class="px-6 py-4"><div class="flex flex-col"><span class="font-medium text-on-surface flex items-center gap-2">上海 <span class="material-symbols-outlined text-[14px] text-primary/70" data-icon="arrow_right_alt">arrow_right_alt</span> 北京</span><span class="text-xs text-on-surface-variant mt-0.5">G2 (商务座)</span></div></td><td class="px-6 py-4 text-on-surface-variant">2026-07-15</td><td class="px-6 py-4 text-on-surface-variant">王小二</td><td class="px-6 py-4"><div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-error/10 border border-error/30 animate-pulse"><span class="material-symbols-outlined text-[14px] text-error" data-icon="verified_user">verified_user</span><span class="text-xs font-bold text-error">等待人工验证</span></div></td><td class="px-6 py-4 text-right"><div class="flex items-center justify-end gap-2"><button class="px-4 py-1.5 rounded-lg bg-error text-on-error text-xs font-bold hover:scale-105 transition-transform shadow-[0_0_10px_rgba(255,107,107,0.2)]">去验证</button><button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors"><span class="material-symbols-outlined text-[18px]" data-icon="stop">stop</span></button></div></td></tr>
+<!-- Row: Created (已创建) -->
+<tr class="hover:bg-surface-variant/30 transition-colors group">
+<td class="px-6 py-4 text-on-surface font-mono text-xs">#TK-8922</td>
+<td class="px-6 py-4">
+<div class="flex flex-col">
+<span class="font-medium text-on-surface flex items-center gap-2">
+                                        南京南 <span class="material-symbols-outlined text-[14px] text-primary/70" data-icon="arrow_right_alt">arrow_right_alt</span> 杭州东
+                                    </span>
+<span class="text-xs text-on-surface-variant mt-0.5">所有列车 (二等座)</span>
+</div>
+</td>
+<td class="px-6 py-4 text-on-surface-variant">2026-07-10</td>
+<td class="px-6 py-4 text-on-surface-variant">钱九</td>
+<td class="px-6 py-4">
+<div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-secondary/10 border border-secondary/20">
+<span class="material-symbols-outlined text-[14px] text-secondary" data-icon="new_releases">new_releases</span>
+<span class="text-xs font-medium text-secondary">已创建</span>
+</div>
+</td>
+<td class="px-6 py-4 text-right">
+<div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors tooltip" title="启动">
+<span class="material-symbols-outlined text-[18px]" data-icon="play_arrow">play_arrow</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-tertiary hover:bg-tertiary/10 transition-colors tooltip" title="暂停">
+<span class="material-symbols-outlined text-[18px]" data-icon="pause">pause</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors tooltip" title="恢复">
+<span class="material-symbols-outlined text-[18px]" data-icon="replay">replay</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors tooltip" title="取消">
+<span class="material-symbols-outlined text-[18px]" data-icon="stop">stop</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors tooltip" title="详情">
+<span class="material-symbols-outlined text-[18px]" data-icon="info">info</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row: Running (运行中) -->
+<tr class="hover:bg-surface-variant/30 transition-colors group">
+<td class="px-6 py-4 text-on-surface font-mono text-xs">#TK-8915</td>
+<td class="px-6 py-4">
+<div class="flex flex-col">
+<span class="font-medium text-on-surface flex items-center gap-2">
+                                        杭州东 <span class="material-symbols-outlined text-[14px] text-primary/70" data-icon="arrow_right_alt">arrow_right_alt</span> 南京南
+                                    </span>
+<span class="text-xs text-on-surface-variant mt-0.5">所有G字头 (二等座)</span>
+</div>
+</td>
+<td class="px-6 py-4 text-on-surface-variant">2026-07-12</td>
+<td class="px-6 py-4 text-on-surface-variant">赵六</td>
+<td class="px-6 py-4">
+<div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-primary/10 border border-primary/30 shadow-[0_0_10px_rgba(125,211,252,0.2)]"><span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span></span><span class="text-xs font-bold text-primary">运行中</span></div>
+</td>
+<td class="px-6 py-4 text-right">
+<div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors tooltip" title="启动">
+<span class="material-symbols-outlined text-[18px]" data-icon="play_arrow">play_arrow</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-tertiary hover:bg-tertiary/10 transition-colors tooltip" title="暂停">
+<span class="material-symbols-outlined text-[18px]" data-icon="pause">pause</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors tooltip" title="恢复">
+<span class="material-symbols-outlined text-[18px]" data-icon="replay">replay</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors tooltip" title="取消">
+<span class="material-symbols-outlined text-[18px]" data-icon="stop">stop</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors tooltip" title="详情">
+<span class="material-symbols-outlined text-[18px]" data-icon="info">info</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row: Searching (查询中) -->
+<tr class="hover:bg-surface-variant/30 transition-colors group">
+<td class="px-6 py-4 text-on-surface font-mono text-xs">#TK-8921</td>
+<td class="px-6 py-4">
+<div class="flex flex-col">
+<span class="font-medium text-on-surface flex items-center gap-2">
+                                        北京南 <span class="material-symbols-outlined text-[14px] text-primary/70" data-icon="arrow_right_alt">arrow_right_alt</span> 上海虹桥
+                                    </span>
+<span class="text-xs text-on-surface-variant mt-0.5">G1, G5, G11 (二等座)</span>
+</div>
+</td>
+<td class="px-6 py-4 text-on-surface-variant">2026-07-09</td>
+<td class="px-6 py-4 text-on-surface-variant">张三, 李四</td>
+<td class="px-6 py-4">
+<div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-primary/10 border border-primary/20">
+<span class="relative flex h-2 w-2">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+</span>
+<span class="text-xs font-medium text-primary">查询中</span>
+</div>
+</td>
+<td class="px-6 py-4 text-right">
+<div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors tooltip" title="启动">
+<span class="material-symbols-outlined text-[18px]" data-icon="play_arrow">play_arrow</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-tertiary hover:bg-tertiary/10 transition-colors tooltip" title="暂停">
+<span class="material-symbols-outlined text-[18px]" data-icon="pause">pause</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors tooltip" title="恢复">
+<span class="material-symbols-outlined text-[18px]" data-icon="replay">replay</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors tooltip" title="取消">
+<span class="material-symbols-outlined text-[18px]" data-icon="stop">stop</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors tooltip" title="详情">
+<span class="material-symbols-outlined text-[18px]" data-icon="info">info</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row: Submitting (正在提交) -->
+<tr class="hover:bg-surface-variant/30 transition-colors group">
+<td class="px-6 py-4 text-on-surface font-mono text-xs">#TK-8923</td>
+<td class="px-6 py-4">
+<div class="flex flex-col">
+<span class="font-medium text-on-surface flex items-center gap-2">
+                                        深圳北 <span class="material-symbols-outlined text-[14px] text-primary/70" data-icon="arrow_right_alt">arrow_right_alt</span> 广州南
+                                    </span>
+<span class="text-xs text-on-surface-variant mt-0.5">G6202 (一等座)</span>
+</div>
+</td>
+<td class="px-6 py-4 text-on-surface-variant">2026-07-06</td>
+<td class="px-6 py-4 text-on-surface-variant">吴十</td>
+<td class="px-6 py-4">
+<div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-secondary/10 border border-secondary/20">
+<span class="material-symbols-outlined text-[14px] text-secondary animate-spin" data-icon="sync">sync</span>
+<span class="text-xs font-medium text-secondary">正在提交</span>
+</div>
+</td>
+<td class="px-6 py-4 text-right">
+<div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors tooltip" title="启动">
+<span class="material-symbols-outlined text-[18px]" data-icon="play_arrow">play_arrow</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-tertiary hover:bg-tertiary/10 transition-colors tooltip" title="暂停">
+<span class="material-symbols-outlined text-[18px]" data-icon="pause">pause</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors tooltip" title="恢复">
+<span class="material-symbols-outlined text-[18px]" data-icon="replay">replay</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors tooltip" title="取消">
+<span class="material-symbols-outlined text-[18px]" data-icon="stop">stop</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors tooltip" title="详情">
+<span class="material-symbols-outlined text-[18px]" data-icon="info">info</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row: Pending Payment (待支付) -->
+<tr class="hover:bg-surface-variant/30 transition-colors group"><td class="px-6 py-4 text-on-surface font-mono text-xs">#TK-8920</td><td class="px-6 py-4"><div class="flex flex-col"><span class="font-medium text-on-surface flex items-center gap-2">广州南 <span class="material-symbols-outlined text-[14px] text-primary/70" data-icon="arrow_right_alt">arrow_right_alt</span> 深圳北</span><span class="text-xs text-on-surface-variant mt-0.5">G6201 (一等座)</span></div></td><td class="px-6 py-4 text-on-surface-variant">2026-07-05</td><td class="px-6 py-4 text-on-surface-variant">王五</td><td class="px-6 py-4"><div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-tertiary/20 border border-tertiary/40 shadow-[0_0_10px_rgba(200,160,240,0.2)]"><span class="material-symbols-outlined text-[14px] text-tertiary" data-icon="payments">payments</span><span class="text-xs font-bold text-tertiary">普通订单待支付 (09:45)</span></div></td><td class="px-6 py-4 text-right"><div class="flex items-center justify-end gap-2"><button class="px-4 py-1.5 rounded-lg bg-tertiary text-on-tertiary text-xs font-bold hover:scale-105 transition-transform shadow-[0_0_10px_rgba(200,160,240,0.2)]">去支付</button><button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors"><span class="material-symbols-outlined text-[18px]" data-icon="stop">stop</span></button></div></td></tr>
+<!-- Row: Waitlist Submitted (候补已提交) -->
+<tr class="hover:bg-surface-variant/30 transition-colors group"><td class="px-6 py-4 text-on-surface font-mono text-xs">#TK-8924</td><td class="px-6 py-4"><div class="flex flex-col"><span class="font-medium text-on-surface flex items-center gap-2">上海虹桥 <span class="material-symbols-outlined text-[14px] text-primary/70" data-icon="arrow_right_alt">arrow_right_alt</span> 杭州东</span><span class="text-xs text-on-surface-variant mt-0.5">所有列车 (二等座)</span></div></td><td class="px-6 py-4 text-on-surface-variant">2026-07-20</td><td class="px-6 py-4 text-on-surface-variant">郑十一</td><td class="px-6 py-4"><div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-secondary/20 border border-secondary/40"><span class="material-symbols-outlined text-[14px] text-secondary" data-icon="hourglass_empty">hourglass_empty</span><span class="text-xs font-bold text-secondary">候补已提交等待兑现</span></div></td><td class="px-6 py-4 text-right"><div class="flex items-center justify-end gap-2"><button class="px-4 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-primary text-xs font-bold hover:bg-primary/20 transition-colors">查看详情</button><button class="px-4 py-1.5 rounded-lg bg-error/10 border border-error/30 text-error text-xs font-bold hover:bg-error/20 transition-colors">取消候补</button></div></td></tr>
+<!-- Row: Paused (已暂停) -->
+<tr class="hover:bg-surface-variant/30 transition-colors group">
+<td class="px-6 py-4 text-on-surface font-mono text-xs opacity-60">#TK-8885</td>
+<td class="px-6 py-4 opacity-60">
+<div class="flex flex-col">
+<span class="font-medium text-on-surface flex items-center gap-2">
+                                        武汉 <span class="material-symbols-outlined text-[14px] text-primary/70" data-icon="arrow_right_alt">arrow_right_alt</span> 长沙南
+                                    </span>
+<span class="text-xs text-on-surface-variant mt-0.5">所有车次 (一等座)</span>
+</div>
+</td>
+<td class="px-6 py-4 text-on-surface-variant opacity-60">2026-07-25</td>
+<td class="px-6 py-4 text-on-surface-variant opacity-60">周八</td>
+<td class="px-6 py-4">
+<div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-surface-variant/40 border border-outline-variant"><span class="material-symbols-outlined text-[14px] text-on-surface-variant" data-icon="block">block</span><span class="text-xs font-medium text-on-surface-variant">已停止</span></div>
+</td>
+<td class="px-6 py-4 text-right">
+<div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors tooltip" title="启动">
+<span class="material-symbols-outlined text-[18px]" data-icon="play_arrow">play_arrow</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-tertiary hover:bg-tertiary/10 transition-colors tooltip" title="暂停">
+<span class="material-symbols-outlined text-[18px]" data-icon="pause">pause</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors tooltip" title="恢复">
+<span class="material-symbols-outlined text-[18px]" data-icon="replay">replay</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors tooltip" title="取消">
+<span class="material-symbols-outlined text-[18px]" data-icon="stop">stop</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors tooltip" title="详情">
+<span class="material-symbols-outlined text-[18px]" data-icon="info">info</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row: Failed (失败) -->
+<tr class="hover:bg-surface-variant/30 transition-colors group">
+<td class="px-6 py-4 text-on-surface font-mono text-xs opacity-60">#TK-8890</td>
+<td class="px-6 py-4 opacity-60">
+<div class="flex flex-col">
+<span class="font-medium text-on-surface flex items-center gap-2">
+                                        成都东 <span class="material-symbols-outlined text-[14px] text-primary/70" data-icon="arrow_right_alt">arrow_right_alt</span> 重庆北
+                                    </span>
+<span class="text-xs text-on-surface-variant mt-0.5">D列车 (二等座)</span>
+</div>
+</td>
+<td class="px-6 py-4 text-on-surface-variant opacity-60">2026-07-04</td>
+<td class="px-6 py-4 text-on-surface-variant opacity-60">孙七</td>
+<td class="px-6 py-4">
+<div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-error/20 border border-error/40 shadow-[0_0_10px_rgba(255,107,107,0.1)]"><span class="material-symbols-outlined text-[14px] text-error" data-icon="report">report</span><span class="text-xs font-bold text-error">失败: 网络异常</span></div>
+</td>
+<td class="px-6 py-4 text-right">
+<div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors tooltip" title="启动">
+<span class="material-symbols-outlined text-[18px]" data-icon="play_arrow">play_arrow</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-tertiary hover:bg-tertiary/10 transition-colors tooltip" title="暂停">
+<span class="material-symbols-outlined text-[18px]" data-icon="pause">pause</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors tooltip" title="恢复">
+<span class="material-symbols-outlined text-[18px]" data-icon="replay">replay</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors tooltip" title="取消">
+<span class="material-symbols-outlined text-[18px]" data-icon="stop">stop</span>
+</button>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors tooltip" title="详情">
+<span class="material-symbols-outlined text-[18px]" data-icon="info">info</span>
+</button>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Table Footer / Pagination -->
+<div class="mt-auto px-6 py-4 border-t border-primary/10 bg-surface/30 flex items-center justify-between">
+<span class="text-xs text-on-surface-variant">显示 1-8 条，共 42 条任务</span>
+<div class="flex items-center gap-2">
+<button class="w-8 h-8 rounded-lg glass-card flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors disabled:opacity-50" disabled="">
+<span class="material-symbols-outlined text-[18px]" data-icon="chevron_left">chevron_left</span>
+</button>
+<button class="w-8 h-8 rounded-lg bg-primary/20 text-primary border border-primary/30 flex items-center justify-center text-sm font-medium">1</button>
+<button class="w-8 h-8 rounded-lg glass-card flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors text-sm font-medium">2</button>
+<span class="text-on-surface-variant text-sm px-1">...</span>
+<button class="w-8 h-8 rounded-lg glass-card flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors text-sm font-medium">9</button>
+<button class="w-8 h-8 rounded-lg glass-card flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[18px]" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+</main>
+</body></html>

@@ -1,0 +1,17 @@
+/target/
+/data/
+/dist/
+/.idea/
+
+/12306-rs
+/12306-login-qr.png
+
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.log
+
+.DS_Store
+.env
+.env.*
+!.env.example

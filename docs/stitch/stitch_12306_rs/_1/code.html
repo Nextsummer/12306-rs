@@ -1,0 +1,431 @@
+<!DOCTYPE html><html class="dark" lang="zh-CN"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>12306-rs - 任务运行控制台</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<style>
+        .material-symbols-outlined {
+            font-family: 'Material Symbols Outlined';
+            font-weight: normal;
+            font-style: normal;
+            font-size: 24px;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            display: inline-block;
+            white-space: nowrap;
+            word-wrap: normal;
+            direction: ltr;
+            -webkit-font-feature-settings: 'liga';
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Custom Scrollbar for Glass Theme */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(10, 14, 26, 0.5); 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(125, 211, 252, 0.2); 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(125, 211, 252, 0.4); 
+        }
+
+        /* Glass Glow Effects */
+        .glass-card {
+            background: rgba(15, 21, 36, 0.6);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(125, 211, 252, 0.1);
+            box-shadow: 0 0 30px rgba(125, 211, 252, 0.05);
+        }
+        
+        .glass-card-elevated {
+            background: rgba(15, 21, 36, 0.75);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(125, 211, 252, 0.15);
+            box-shadow: 0 0 40px rgba(125, 211, 252, 0.08);
+        }
+
+        /* Terminal Line Animation */
+        @keyframes typeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .log-line {
+            animation: typeIn 0.3s ease-out forwards;
+        }
+    </style>
+<!-- Tailwind Config -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+                "outline-variant": "#2a3a48",
+                "on-surface-variant": "#a0b4c4",
+                "inverse-on-surface": "#0a0e1a",
+                "outline": "#4a6070",
+                "surface-container-high": "#1a2438",
+                "surface-variant": "#1a2438",
+                "surface-dim": "#0f1524",
+                "surface-container": "#141c2e",
+                "on-primary-fixed-variant": "#004d73",
+                "on-error-container": "#ffb3b3",
+                "secondary-fixed-dim": "#88b4cc",
+                "tertiary-container": "#3d2060",
+                "on-tertiary-container": "#e8d0ff",
+                "on-primary-fixed": "#001f2e",
+                "surface-tint": "#7dd3fc",
+                "on-secondary-container": "#c0d8e8",
+                "on-tertiary-fixed": "#1a002e",
+                "on-background": "#e0e8f0",
+                "on-primary": "#001f2e",
+                "error": "#ff6b6b",
+                "secondary": "#88b4cc",
+                "tertiary-fixed-dim": "#c8a0f0",
+                "surface-container-low": "#111828",
+                "surface": "#0f1524",
+                "on-tertiary": "#1a002e",
+                "on-primary-container": "#c8eaff",
+                "inverse-primary": "#0a4c6e",
+                "tertiary": "#c8a0f0",
+                "primary-fixed-dim": "#7dd3fc",
+                "on-secondary-fixed-variant": "#2a4a5e",
+                "surface-bright": "#1a2438",
+                "on-secondary": "#001f2e",
+                "tertiary-fixed": "#e8d0ff",
+                "on-surface": "#e0e8f0",
+                "secondary-container": "#1a3a4e",
+                "surface-container-highest": "#202c42",
+                "primary-fixed": "#c8eaff",
+                "on-error": "#1a0000",
+                "inverse-surface": "#e0e8f0",
+                "on-tertiary-fixed-variant": "#4d2a73",
+                "on-secondary-fixed": "#0d1f2b",
+                "background": "#0a0e1a",
+                "secondary-fixed": "#c0d8e8",
+                "primary": "#7dd3fc",
+                "surface-container-lowest": "#0a0e1a",
+                "primary-container": "#0e4d6e",
+                "error-container": "#3d1414"
+        },
+        "borderRadius": {
+                "DEFAULT": "0.5rem",
+                "lg": "1rem",
+                "xl": "1.5rem",
+                "full": "9999px"
+        },
+        "spacing": {},
+        "fontFamily": {
+                "headline": [
+                        "Inter"
+                ],
+                "display": [
+                        "Inter"
+                ],
+                "body": [
+                        "Inter"
+                ],
+                "label": [
+                        "Inter"
+                ]
+        },
+        "fontSize": {}
+},
+    },
+  }
+</script>
+</head>
+<body class="bg-background text-on-surface font-body overflow-hidden selection:bg-primary/30 selection:text-primary">
+<!-- SideNavBar -->
+<nav class="fixed left-0 top-0 h-full flex flex-col w-64 border-r border-primary/10 bg-surface/60 backdrop-blur-xl shadow-[0_0_30px_rgba(125,211,252,0.05)] z-50">
+<!-- Brand/Header -->
+<div class="h-16 flex items-center px-6 border-b border-primary/10">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center border border-primary/30">
+<span class="material-symbols-outlined text-primary text-xl">train</span>
+</div>
+<div>
+<h1 class="text-xl font-headline font-semibold tracking-tight text-primary">12306-rs</h1>
+<p class="text-xs text-on-surface-variant font-medium">Rust 后台管理</p>
+</div>
+</div>
+</div>
+<!-- Navigation Links -->
+<div class="flex-1 py-6 space-y-1">
+<!-- 1. 控制面板 (Inactive) -->
+<a class="flex items-center gap-3 px-4 py-3 mx-2 rounded-lg text-on-surface-variant hover:bg-primary/5 hover:text-on-surface transition-colors active:scale-95 transition-transform" href="#">
+<span class="material-symbols-outlined text-[20px]">dashboard</span>
+<span class="font-medium text-sm">控制面板</span>
+</a>
+<!-- 2. 车票查询 (Inactive) -->
+<a class="flex items-center gap-3 px-4 py-3 mx-2 rounded-lg text-on-surface-variant hover:bg-primary/5 hover:text-on-surface transition-colors active:scale-95 transition-transform" href="#">
+<span class="material-symbols-outlined text-[20px]">search</span>
+<span class="font-medium text-sm">车票查询</span>
+</a>
+<!-- 3. 任务列表 (Active semantic mapping for "Task Details") -->
+<a class="flex items-center gap-3 px-4 py-3 text-primary bg-primary/10 border-r-2 border-primary hover:bg-primary/5 hover:text-on-surface transition-colors active:scale-95 transition-transform" href="#">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">assignment</span>
+<span class="font-medium text-sm">任务列表</span>
+</a>
+<!-- 4. 系统设置 (Inactive) -->
+<a class="flex items-center gap-3 px-4 py-3 mx-2 rounded-lg text-on-surface-variant hover:bg-primary/5 hover:text-on-surface transition-colors active:scale-95 transition-transform" href="#">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+<span class="font-medium text-sm">系统设置</span>
+</a>
+</div>
+</nav>
+<!-- TopAppBar -->
+<header class="fixed top-0 right-0 left-64 h-16 flex items-center justify-between px-6 z-40 bg-surface-variant/75 backdrop-blur-2xl border-b border-primary/10 shadow-sm">
+<!-- Breadcrumb / Contextual Nav in Top Bar -->
+<div class="flex items-center gap-2 text-sm font-body text-on-surface-variant">
+<span class="material-symbols-outlined text-lg">assignment</span>
+<span class="">任务列表</span>
+<span class="material-symbols-outlined text-sm">chevron_right</span>
+<span class="text-primary font-medium">任务运行控制台 #TASK-8832</span>
+</div>
+<!-- Trailing Actions -->
+<div class="flex items-center gap-4">
+<!-- Search Icon (Search bar logic placeholder as requested by JSON: "on_right") -->
+<button class="p-2 rounded-full text-on-surface-variant hover:text-primary transition-colors hover:bg-primary/10 scale-100 hover:scale-105">
+<span class="material-symbols-outlined text-[22px]">search</span>
+</button>
+<button class="p-2 rounded-full text-on-surface-variant hover:text-primary transition-colors hover:bg-primary/10 scale-100 hover:scale-105">
+<span class="material-symbols-outlined text-[22px]">notifications</span>
+</button>
+<button class="p-2 rounded-full text-on-surface-variant hover:text-primary transition-colors hover:bg-primary/10 scale-100 hover:scale-105">
+<span class="material-symbols-outlined text-[22px]">account_circle</span>
+</button>
+<button class="p-2 rounded-full text-on-surface-variant hover:text-primary transition-colors hover:bg-primary/10 scale-100 hover:scale-105 ml-2 border-l border-primary/20 rounded-none pl-4">
+<span class="material-symbols-outlined text-[22px]">power_settings_new</span>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-64 mt-16 h-[calc(100vh-4rem)] overflow-y-auto p-6 relative">
+<!-- Background Ambient Glow -->
+<div class="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-64 bg-primary/5 blur-[100px] rounded-full pointer-events-none"></div>
+<div class="max-w-screen-2xl mx-auto space-y-6 relative z-10">
+<!-- Top Row: Page Header & Global Status -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+<div>
+<h2 class="text-2xl font-headline font-semibold text-on-surface tracking-tight">任务运行控制台: G8312 次列车抢票任务</h2>
+<p class="text-sm text-on-surface-variant mt-1">创建于 2026-07-03 08:30:00 · 目标站点: 广州南 ➔ 深圳北</p>
+</div>
+<!-- Status Indicator 'Running' with pulse -->
+<div class="flex items-center gap-3 px-4 py-2 rounded-full glass-card border-primary/20 text-primary self-start">
+<span class="relative flex h-3 w-3">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+<span class="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
+</span>
+<span class="text-sm font-semibold tracking-wide">候补兑现成功待支付</span>
+</div>
+</div>
+<!-- Central Alert: Pending Payment Banner -->
+<div class="w-full relative overflow-hidden rounded-xl bg-surface-variant/90 border border-error/40 shadow-[0_0_20px_rgba(255,107,107,0.15)] flex flex-col md:flex-row md:items-center justify-between p-5 backdrop-blur-xl gap-4">
+<!-- Decorative animated glow for the banner -->
+<div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-error/0 via-error to-error/0 opacity-75"></div>
+<div class="flex items-center gap-4 z-10">
+<div class="w-10 h-10 rounded-full bg-error/20 flex items-center justify-center border border-error/50 shrink-0">
+<span class="material-symbols-outlined text-error" style="font-variation-settings: 'FILL' 1;">payments</span>
+</div>
+<div>
+<h3 class="text-error font-semibold text-base tracking-wide flex items-center gap-2">待支付 - 候补兑现成功 <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-error/20 text-error border border-error/30">ACTION REQUIRED</span></h3>
+<p class="text-sm text-on-surface/90 mt-1 leading-relaxed">订单已提交，请于 <strong class="text-error font-mono text-base bg-error/10 px-1 rounded">15分钟内</strong> 前往 12306 官方客户端完成支付（系统不自动支付）。<br><span class="text-on-surface-variant">普通余票不足，已成功通过强候补通道锁定席位。剩余支付时间：<strong class="text-on-surface font-mono">14:59</strong></span></p>
+</div>
+</div>
+<div class="z-10 shrink-0 self-start md:self-center"><div class="flex flex-col items-end gap-2"><button class="px-8 py-4 rounded-xl bg-error hover:bg-error/90 text-on-error transition-all font-bold text-base flex items-center gap-2 shadow-[0_0_20px_rgba(255,107,107,0.4)] active:scale-95">立即前往支付 <span class="material-symbols-outlined text-[20px]">payments</span></button><p class="text-[10px] text-on-surface-variant text-right">依据 12306 规定，候补订单需手动完成支付以确保席位有效</p></div></div>
+</div>
+<!-- 3-Column Layout Grid for "War Room" -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+<!-- Left Column: Config Summary (3 cols) -->
+<div class="lg:col-span-3 space-y-6">
+<!-- Card 1: Task Config Summary -->
+<div class="glass-card rounded-2xl p-6 relative overflow-hidden group h-full">
+<div class="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity">
+<span class="material-symbols-outlined text-6xl text-primary">tune</span>
+</div>
+<div class="flex items-center gap-2 mb-6">
+<span class="material-symbols-outlined text-primary text-xl">build_circle</span>
+<h3 class="text-lg font-semibold text-on-surface">任务配置摘要</h3>
+</div>
+<div class="flex flex-col gap-5">
+<div>
+<p class="text-xs text-on-surface-variant mb-1 uppercase tracking-wider">乘车人 (Passenger)</p>
+<p class="text-sm font-medium text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-primary/70">person</span>
+                                    张三, 李四
+                                </p>
+</div>
+<div>
+<p class="text-xs text-on-surface-variant mb-1 uppercase tracking-wider">车次 (Train No.)</p>
+<div class="flex flex-wrap gap-1 mt-1"><span class="px-2 py-0.5 rounded text-xs font-mono font-medium bg-primary/10 text-primary border border-primary/20">G8312</span><span class="px-2 py-0.5 rounded text-xs font-mono font-medium bg-primary/10 text-primary border border-primary/20">G102</span></div>
+</div>
+<div>
+<p class="text-xs text-on-surface-variant mb-1 uppercase tracking-wider">坐席 (Seat Type)</p>
+<p class="text-sm font-medium text-on-surface">二等座, 一等座</p>
+</div>
+<div>
+<p class="text-xs text-on-surface-variant mb-1 uppercase tracking-wider">日期 (Date)</p>
+<p class="text-sm font-medium text-on-surface font-mono">2026-07-10</p>
+</div>
+<div class="pt-4 border-t border-primary/10">
+<p class="text-xs text-on-surface-variant mb-1 uppercase tracking-wider">轮询间隔</p>
+<p class="text-sm font-medium text-on-surface font-mono">3000ms</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Middle Column: Progress, Hits, & Houbu (4 cols) -->
+<div class="lg:col-span-4 space-y-6 flex flex-col">
+<!-- Card 2: Current Progress Bento -->
+<div class="glass-card rounded-2xl p-6">
+<div class="flex items-center gap-2 mb-6">
+<span class="material-symbols-outlined text-primary text-xl">moving</span>
+<h3 class="text-lg font-semibold text-on-surface">执行状态</h3>
+</div>
+<!-- Progress Steps -->
+<div class="relative">
+<!-- Vertical line connecting steps -->
+<div class="absolute left-[11px] top-2 bottom-2 w-[2px] bg-primary/10 rounded-full"></div>
+<div class="space-y-4">
+<!-- Step 1: Done -->
+<div class="flex items-start gap-4 relative z-10">
+<div class="w-6 h-6 rounded-full bg-primary/20 border border-primary text-primary flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[14px]">check</span>
+</div>
+<div>
+<p class="text-sm font-medium text-on-surface">初始化登录</p>
+<p class="text-xs text-on-surface-variant mt-0.5">Cookie 有效，会话保持中</p>
+</div>
+</div>
+<!-- Step 2: Failed/Skipped (Common ticket) -->
+<div class="flex items-start gap-4 relative z-10">
+<div class="w-6 h-6 rounded-full bg-surface-variant border border-outline text-outline flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[14px]">search_off</span>
+</div>
+<div>
+<p class="text-sm font-medium text-on-surface">普通余票监控</p>
+<p class="text-xs text-on-surface-variant mt-0.5">G102 无余票，已转入候补流程</p>
+</div>
+</div>
+<!-- Step 3: Current (Pulse - Houbu) -->
+<div class="flex items-start gap-4 relative z-10">
+<div class="w-6 h-6 rounded-full bg-tertiary text-on-tertiary flex items-center justify-center shrink-0 mt-0.5 shadow-[0_0_10px_rgba(200,160,240,0.5)]">
+<span class="material-symbols-outlined text-[14px]">cached</span>
+</div>
+<div class="w-full">
+<div class="flex justify-between items-center mb-1">
+<p class="text-sm font-medium text-tertiary">强候补流程</p>
+<span class="text-xs font-mono text-tertiary/80">100%</span>
+</div>
+<!-- Progress Bar -->
+<div class="h-1.5 w-full bg-surface-variant rounded-full overflow-hidden">
+<div class="h-full bg-tertiary w-full rounded-full shadow-[0_0_10px_rgba(200,160,240,0.8)]"></div>
+</div>
+<p class="text-xs text-on-surface-variant mt-1">候补兑现成功待支付</p>
+</div>
+</div>
+<!-- Step 4: Pending Action -->
+<div class="flex items-start gap-4 relative z-10">
+<div class="w-6 h-6 rounded-full bg-error/20 border border-error text-error flex items-center justify-center shrink-0 mt-0.5 animate-pulse">
+<span class="material-symbols-outlined text-[14px]">payments</span>
+</div>
+<div>
+<p class="text-sm font-medium text-error">等待支付</p>
+<p class="text-xs text-error/80 mt-0.5">需在15分钟内完成</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Card 3: Houbu Status (Enhanced) -->
+<div class="glass-card-elevated border-tertiary/30 shadow-[0_0_30px_rgba(200,160,240,0.1)] rounded-2xl p-6 flex-1">
+<div class="flex items-center justify-between mb-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-tertiary text-xl animate-spin-slow" style="animation-duration: 4s;">hourglass_bottom</span>
+<h3 class="text-lg font-semibold text-on-surface">候补状态核心区</h3>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-xs text-on-surface-variant font-medium">强候补开关</span>
+<button class="w-8 h-4 rounded-full bg-tertiary relative cursor-pointer border border-tertiary/30">
+<span class="absolute left-0.5 top-0.5 w-3 h-3 rounded-full bg-on-tertiary shadow-sm transition-all translate-x-4"></span>
+</button>
+</div>
+</div>
+<div class="bg-tertiary/10 rounded-xl p-4 border border-tertiary/30 flex flex-col relative overflow-hidden">
+<!-- Glow behind text -->
+<div class="absolute inset-0 bg-gradient-to-br from-tertiary/5 to-transparent"></div>
+<div class="absolute top-0 right-0 p-2 opacity-30">
+<span class="material-symbols-outlined text-tertiary text-4xl">local_activity</span>
+</div>
+<p class="text-xs text-tertiary font-medium uppercase tracking-wide mb-2 flex items-center gap-1.5 relative z-10">
+<span class="material-symbols-outlined text-[16px]">check_circle</span> 强候补已触发
+                            </p>
+<div class="mt-2 relative z-10">
+<p class="text-sm font-medium text-on-surface mb-1">候补兑现成功待支付</p>
+<ul class="text-xs text-on-surface-variant space-y-1">
+<li class="flex items-center gap-2"><span class="w-1 h-1 rounded-full bg-tertiary"></span> 目标车次: G102</li>
+<li class="flex items-center gap-2"><span class="w-1 h-1 rounded-full bg-tertiary"></span> 预估排队人数: 5-10人</li>
+<li class="flex items-center gap-2 text-error"><span class="w-1 h-1 rounded-full bg-error"></span> 状态: 候补兑现成功待支付</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Column: Real-time Log Stream (Decision Chain) -->
+<div class="lg:col-span-5 h-[650px] lg:h-auto"><div class="glass-card rounded-2xl p-6 mb-6 border-tertiary/20">
+<div class="flex items-center gap-2 mb-6">
+<span class="material-symbols-outlined text-tertiary text-xl">account_tree</span>
+<h3 class="text-lg font-semibold text-on-surface">执行决策链 (Logic View)</h3>
+</div>
+<div class="space-y-4"><div class="flex items-center gap-4 p-3 rounded-lg bg-surface-container/50 border border-primary/10"><div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-primary text-sm">search</span></div><div class="flex-1"><p class="text-xs text-on-surface-variant uppercase tracking-wider">逻辑步骤 1</p><p class="text-sm font-medium text-on-surface">查询无票: 触发候补策略</p></div></div><div class="flex items-center gap-4 p-3 rounded-lg bg-surface-container/50 border border-tertiary/10"><div class="w-8 h-8 rounded-full bg-tertiary/10 flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-tertiary text-sm">rule</span></div><div class="flex-1"><p class="text-xs text-on-surface-variant uppercase tracking-wider">逻辑步骤 2</p><p class="text-sm font-medium text-on-surface">判定强候补策略: 满足执行条件</p></div></div><div class="flex items-center gap-4 p-3 rounded-lg bg-surface-container/50 border border-primary/10"><div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-primary text-sm">rocket_launch</span></div><div class="flex-1"><p class="text-xs text-on-surface-variant uppercase tracking-wider">逻辑步骤 3</p><p class="text-sm font-medium text-on-surface">提交候补: 订单已成功提交</p></div></div><div class="flex items-center gap-4 p-3 rounded-lg bg-error/5 border border-error/20"><div class="w-8 h-8 rounded-full bg-error/10 flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-error text-sm">check_circle</span></div><div class="flex-1"><p class="text-xs text-on-surface-variant uppercase tracking-wider">逻辑步骤 4</p><p class="text-sm font-medium text-error">候补兑现成功待支付</p></div></div></div>
+</div>
+<div class="glass-card rounded-2xl h-full flex flex-col border border-primary/20 shadow-[0_0_40px_rgba(125,211,252,0.06)] relative overflow-hidden">
+<!-- Terminal Header -->
+<div class="h-12 bg-surface-container-highest/80 border-b border-primary/10 flex items-center justify-between px-4 z-10">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-tertiary text-lg">terminal</span>
+<span class="text-sm font-medium text-on-surface tracking-wide">决策日志流 (Decision Chain Logs)</span>
+</div>
+<div class="flex gap-2">
+<button class="text-xs font-mono text-primary hover:text-primary-fixed bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded transition-colors">
+                                    清空
+                                </button>
+<button class="text-xs font-mono text-on-surface-variant hover:text-on-surface bg-surface-variant hover:bg-surface-container px-2 py-1 rounded transition-colors flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">download</span> 导出
+                                </button>
+</div>
+</div>
+<!-- Terminal Body -->
+<div class="flex-1 p-4 font-mono text-xs md:text-sm overflow-y-auto space-y-2 bg-[#05070d]/60 z-10" id="terminal-body"><div class="flex gap-3 text-on-surface-variant"><span class="shrink-0 text-outline">2026-07-03 10:00</span><span class="text-secondary shrink-0">[INFO]</span><span class="break-all">Starting query loop for trains: G8312, G102. Dates: 2026-07-10.</span></div><div class="flex gap-3 text-on-surface-variant log-line" style="animation-delay: 0.1s;"><span class="shrink-0 text-outline">2026-07-03 10:00</span><span class="text-outline-variant shrink-0">[QUERY]</span><span class="break-all">查询 G102 无余票 -&gt; 记录状态</span></div><div class="flex gap-3 text-on-surface-variant log-line" style="animation-delay: 0.3s;"><span class="shrink-0 text-outline">2026-07-03 10:00</span><span class="text-tertiary shrink-0">[DECISION]</span><span class="break-all text-tertiary-fixed">检查强候补开关 -&gt; 开关状态: [ON]</span></div><div class="flex gap-3 text-on-surface-variant log-line" style="animation-delay: 0.6s;"><span class="shrink-0 text-outline">2026-07-03 10:00</span><span class="text-tertiary shrink-0">[ACTION]</span><span class="break-all font-medium">触发强候补流程 -&gt; 正在获取候补 token...</span></div><div class="flex gap-3 text-on-surface-variant log-line" style="animation-delay: 1s;"><span class="shrink-0 text-outline">2026-07-03 10:00</span><span class="text-secondary shrink-0">[INFO]</span><span class="break-all">验证候补乘车人信息... 成功。</span></div><div class="flex gap-3 text-on-surface-variant log-line" style="animation-delay: 1.5s;"><span class="shrink-0 text-outline">2026-07-03 10:00</span><span class="text-secondary shrink-0">[INFO]</span><span class="break-all">加入候补队列排队... 当前排队位置: 12</span></div><div class="flex gap-3 text-on-surface-variant log-line" style="animation-delay: 2.2s;"><span class="shrink-0 text-outline">2026-07-03 10:00</span><span class="text-error shrink-0 font-bold">[SUCCESS]</span><span class="break-all text-error font-medium">候补兑现成功！订单号 H990182743。</span></div><div class="flex gap-3 text-on-surface-variant log-line" style="animation-delay: 2.5s;"><span class="shrink-0 text-outline">2026-07-03 10:00</span><span class="text-error shrink-0 font-bold">[ALERT]</span><span class="break-all text-on-surface">系统提示: 请在15分钟内前往 12306 官方客户端完成支付预付款。</span></div><div class="flex gap-3 pt-2"><span class="shrink-0 text-outline opacity-0">2026-07-03 10:00</span><span class="w-2 h-4 bg-tertiary animate-pulse inline-block align-middle"></span></div></div>
+<!-- Scanline Overlay for visual effect -->
+<div class="absolute inset-0 bg-[linear-gradient(transparent_50%,rgba(0,0,0,0.1)_50%)] bg-[length:100%_4px] pointer-events-none z-20 opacity-30"></div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Vanilla JS to auto-scroll terminal -->
+<script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const terminal = document.getElementById('terminal-body');
+            // Auto scroll to bottom
+            setTimeout(() => {
+                 terminal.scrollTop = terminal.scrollHeight;
+            }, 2600); // Wait for animations
+        });
+    </script>
+
+
+</body></html>
